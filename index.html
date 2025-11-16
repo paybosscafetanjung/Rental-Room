@@ -102,9 +102,9 @@
 
       // --- SERVICE STATUS (fitur baru) ---
       // "true" atau "false". Mengontrol apakah layanan muncul di dashboard.
-      billiard_enabled: "true",
+      billiard_enabled: "false", // <-- UBAH INI JADI "false"
       karaoke_enabled: "true",
-      massage_enabled: "false", // Contoh: Kursi pijat 'under construction'
+      massage_enabled: "false", // <-- UBAH INI JADI "false"
 
       // --- HARGA & SERVICE ---
       // (Harga Biliard & Massage)
@@ -156,7 +156,7 @@
         { id: 'K2', name: 'Karaoke 2', type: 'karaoke' },
         { id: 'K3', name: 'Karaoke 3', type: 'karaoke' }
       ],
-      massage: [{ id: 'M1', name: 'Kursi Pijat 1', type: 'massage' }]
+      massage: [{ id: 'M1', name: 'KursI Pijat 1', type: 'massage' }]
     };
 
     // Handler ini dipanggil oleh onSnapshot
@@ -172,15 +172,17 @@
     // Menggantikan initApp() asli
     async function initializeFirebaseAndAuth() {
       // KONFIGURASI FIREBASE ANDA DIMASUKKAN DI SINI
+      // --- INI ADALAH KONFIGURASI BARU ANDA ---
       const firebaseConfig = {
-        apiKey: "AIzaSyCjRY87p_EzrxkVB7HG13bozEUnf6C-63Y",
-        authDomain: "rental-manager-a4d21.firebaseapp.com",
-        projectId: "rental-manager-a4d21",
-        storageBucket: "rental-manager-a4d21.firebasestorage.app",
-        messagingSenderId: "759463472912",
-        appId: "1:759463472912:web:f209186894c5fc6cb3ff95",
-        measurementId: "G-704L1DTJKT"
+        apiKey: "AIzaSyCom-U-BP75_6j_9dwCXdA0VD1vmfCopOg",
+        authDomain: "paybossmanager.firebaseapp.com",
+        projectId: "paybossmanager",
+        storageBucket: "paybossmanager.firebasestorage.app",
+        messagingSenderId: "627431696008",
+        appId: "1:627431696008:web:56137065fbd9aee32b613d"
       };
+      // ----------------------------------------
+
       // Kita set appId ke projectId untuk konsistensi
       appId = firebaseConfig.projectId || 'default-app-id';
 
@@ -240,7 +242,8 @@
 
       // DIMODIFIKASI: Path dikembalikan ke users/{userId}/bookings
       // Ini adalah path yang aman dan benar secara struktur.
-      const collectionRef = collection(db, 'users', userId, 'bookings');
+      // --- PERUBAHAN SOLUSI: Kita akan menggunakan path 'publik' yang sama untuk semua user ---
+      const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
       console.log('Attempting to listen to Firestore at path:', collectionRef.path);
       
       // Dengarkan perubahan data secara real-time
@@ -409,13 +412,6 @@
       // Akan reset jika halaman di-refresh.
       window.elementSdk.setConfig({ [key]: newValue.toString() });
     }
-
-    // --- FUNGSI LAMA (DIHAPUS) ---
-    /*
-    function getPricePerHour(roomType) {
-      // ...
-    }
-    */
 
     function formatCurrency(amount) {
       return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
@@ -600,7 +596,7 @@
       const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room);
       const totalPrice = (price_per_hour * duration) + service_charge;
       
-      // ID akan dibuat otomatis oleh Firestore
+      // --- PERBAIKAN: Definisikan 'booking' object di sini ---
       const booking = {
         room_type: selectedBooking.room.type,
         room_number: selectedBooking.room.id,
@@ -620,11 +616,13 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Menyimpan...';
       
+      // --- PERBAIKAN: Definisikan 'collectionRef' di luar try...catch ---
+      const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
+      
       try {
-        // DIMODIFIKASI: Path dikembalikan ke users/{userId}/bookings
-        const collectionRef = collection(db, 'users', userId, 'bookings');
+        // Path sudah didefinisikan di atas
         console.log('Attempting to write to Firestore at path:', collectionRef.path);
-        await addDoc(collectionRef, booking);
+        await addDoc(collectionRef, booking); // 'booking' sekarang terdefinisi
         
         // onSnapshot akan otomatis update UI
         currentView = 'dashboard';
@@ -632,6 +630,7 @@
 
       } catch (error) {
         console.error("Error adding document: ", error);
+        // 'collectionRef' sekarang terdefinisi di sini
         console.error("PASTIKAN FIREBASE SECURITY RULES ANDA MENGIZINKAN AKSES 'create' ke path:", collectionRef.path);
         alert('Gagal menyimpan booking. Silakan coba lagi.');
         submitBtn.disabled = false;
@@ -668,7 +667,8 @@
         }
 
         // DIMODIFIKASI: Path dikembalikan ke users/{userId}/bookings
-        const docRef = doc(db, 'users', userId, 'bookings', booking.id);
+        // --- PERUBAHAN SOLUSI: Kita akan menggunakan path 'publik' yang sama untuk semua user ---
+        const docRef = doc(db, 'payboss_bookings', appId, 'all_bookings', booking.id);
         console.log('Attempting to update Firestore doc at path:', docRef.path);
         
         try {
