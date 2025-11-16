@@ -16,13 +16,33 @@
       box-sizing: border-box;
     }
     
-    @keyframes pulse-glow {
-      0%, 100% { box-shadow: 0 0 20px rgba(251, 191, 36, 0.5); }
-      50% { box-shadow: 0 0 30px rgba(251, 191, 36, 0.8); }
+    /* Animasi standar untuk room aktif */
+    @keyframes pulse-glow-blue {
+      0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); } /* Biru */
+      50% { box-shadow: 0 0 30px rgba(59, 130, 246, 0.8); }
+    }
+    
+    /* Animasi BARU untuk room yang waktunya habis */
+    @keyframes pulse-glow-red {
+      0%, 100% { 
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.6); /* Merah */
+        border-color: rgba(239, 68, 68, 0.8);
+      }
+      50% { 
+        box-shadow: 0 0 35px rgba(239, 68, 68, 1); /* Merah Terang */
+        border-color: rgba(239, 68, 68, 1);
+      }
     }
     
     .active-room {
-      animation: pulse-glow 2s infinite;
+      animation: pulse-glow-blue 2s infinite; /* Menggunakan animasi biru */
+      border: 2px solid transparent;
+    }
+
+    /* Class BARU untuk notifikasi waktu habis */
+    .expired-room {
+      animation: pulse-glow-red 1s infinite; /* Menggunakan animasi merah, lebih cepat */
+      border: 2px solid #EF4444; /* Border merah */
     }
     
     @keyframes slideIn {
@@ -137,6 +157,9 @@
     // Variabel global Firebase
     let db, auth, app, userId, appId;
     let unsubscribeBookings = null; // Untuk listener snapshot
+    let roomTimerInterval = null; // --- BARU: Untuk timer real-time ---
+    let audioCtx = null; // --- BARU: Untuk notifikasi suara ---
+    let playedSounds = {}; // --- BARU: Mencegah suara berulang ---
 
     let currentUser = null; // User aplikasi (Kasir/Manager)
     let allBookings = []; // Data dari Firebase
@@ -165,6 +188,8 @@
         allBookings = data;
         if (currentView !== 'login') {
           renderApp();
+          // --- BARU: Perbarui juga timer setiap ada data baru ---
+          updateRoomTimers(); 
         }
       }
     };
@@ -211,6 +236,7 @@
             unsubscribeBookings(); // Hentikan listener lama
             unsubscribeBookings = null;
           }
+          stopRoomTimer(); // --- BARU: Hentikan timer saat auth hilang ---
           renderApp(); // Pastikan renderApp dipanggil
         }
       });
@@ -512,6 +538,99 @@
     }
     
     // ---------------------------------------------
+    
+    // --- FUNGSI BARU UNTUK NOTIFIKASI SUARA ---
+    function playNotificationSound() {
+      // Inisialisasi AudioContext saat pertama kali dibutuhkan
+      // (Harus dipicu oleh interaksi user, seperti 'click', tapi
+      // kita coba langsung, jika gagal, user harus klik dulu)
+      if (!audioCtx) {
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+          console.error("AudioContext tidak didukung.", e);
+          return;
+        }
+      }
+
+      // Buat suara beep
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.type = 'sine'; // Tipe gelombang suara
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Frekuensi (Hz) - nada tinggi
+      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime); // Volume
+
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.3); // Durasi beep (0.3 detik)
+    }
+    
+    // --- FUNGSI BARU UNTUK TIMER REAL-TIME ---
+    function startRoomTimer() {
+      // Hentikan timer lama jika ada
+      stopRoomTimer();
+      // Mulai timer baru, update setiap detik
+      roomTimerInterval = setInterval(updateRoomTimers, 1000);
+      playedSounds = {}; // Reset daftar suara yang sudah diputar
+      console.log("Room timer started.");
+    }
+
+    function stopRoomTimer() {
+      if (roomTimerInterval) {
+        clearInterval(roomTimerInterval);
+        roomTimerInterval = null;
+        console.log("Room timer stopped.");
+      }
+    }
+    
+    function updateRoomTimers() {
+      // Cari semua elemen timer di dashboard
+      const timerDisplays = document.querySelectorAll('.room-timer-display');
+      if (timerDisplays.length === 0) return; // Tidak ada timer aktif
+
+      const now = new Date();
+      
+      timerDisplays.forEach(display => {
+        const endTimeStr = display.dataset.endTime;
+        const roomId = display.dataset.roomId; // Kita butuh ID unik untuk audio
+        if (!endTimeStr) return;
+        
+        const end = new Date(endTimeStr);
+        const diff = end - now;
+        
+        const card = display.closest('.room-card'); // Dapatkan elemen kartu terdekat
+        
+        if (diff <= 0) {
+          display.textContent = 'Waktu Habis!';
+          // Tambah class notifikasi visual
+          if (card && !card.classList.contains('expired-room')) {
+            card.classList.add('expired-room');
+            card.classList.remove('active-room'); // Hapus animasi biru
+            
+            // --- LOGIKA SUARA BARU ---
+            // Hanya mainkan suara JIKA belum pernah dimainkan untuk room ini
+            if (!playedSounds[roomId]) {
+              playNotificationSound();
+              playedSounds[roomId] = true; // Tandai sudah diputar
+            }
+          }
+        } else {
+          const hours = Math.floor(diff / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+          
+          display.textContent = `⏳ Sisa: ${hours}j ${minutes}m ${seconds}s`;
+          // Pastikan class notifikasi visual dihapus jika (mungkin) ada kesalahan
+          if (card) {
+            card.classList.remove('expired-room');
+            card.classList.add('active-room');
+          }
+        }
+      });
+    }
 
     function getRoomStatus(roomId) {
       const activeBooking = allBookings.find(b => 
@@ -520,18 +639,8 @@
       return activeBooking || null;
     }
 
-    function getTimeRemaining(endTime) {
-      const now = new Date();
-      const end = new Date(endTime);
-      const diff = end - now;
-      
-      if (diff <= 0) return 'Waktu Habis!';
-      
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      
-      return `${hours}j ${minutes}m`;
-    }
+    // DIMODIFIKASI: Tidak lagi dipakai, digantikan oleh updateRoomTimers
+    // function getTimeRemaining(endTime) { ... }
 
     // Login ini hanya untuk UI, bukan Firebase Auth
     async function handleLogin(e) {
@@ -544,6 +653,7 @@
         currentUser = user;
         currentView = 'dashboard';
         renderApp();
+        startRoomTimer(); // --- BARU: Mulai timer saat login ---
       } else {
         const errorDiv = document.getElementById('login-error');
         errorDiv.textContent = 'Username atau password salah!';
@@ -554,12 +664,14 @@
     function handleLogout() {
       currentUser = null;
       currentView = 'login';
+      stopRoomTimer(); // --- BARU: Hentikan timer saat logout ---
       renderApp();
     }
 
     function showBookingForm(room) {
       selectedBooking = { room, mode: 'new' };
       currentView = 'booking-form';
+      stopRoomTimer(); // --- BARU: Hentikan timer saat pindah halaman ---
       renderApp();
     }
 
@@ -627,6 +739,7 @@
         // onSnapshot akan otomatis update UI
         currentView = 'dashboard';
         renderApp();
+        startRoomTimer(); // --- BARU: Mulai lagi timer saat kembali ke dashboard ---
 
       } catch (error) {
         console.error("Error adding document: ", error);
@@ -702,6 +815,7 @@
     function handleCancelBooking() {
       currentView = 'dashboard';
       renderApp();
+      startRoomTimer(); // --- BARU: Mulai lagi timer saat kembali ke dashboard ---
     }
 
     // --- TIDAK ADA PERUBAHAN DI FUNGSI RENDER ---
@@ -1050,7 +1164,8 @@
         const { price_per_hour, service_charge } = getRoomDetails(room);
         
         return `
-          <div class="p-6 rounded-xl shadow-lg transition-transform hover:scale-105 ${isActive ? 'active-room' : ''}" style="background-color: ${config.surface_color};">
+          <!-- --- BARU: Menambahkan class .room-card --- -->
+          <div class="room-card p-6 rounded-xl shadow-lg transition-transform hover:scale-105 ${isActive ? 'active-room' : ''}" style="background-color: ${config.surface_color};">
             <div class="flex justify-between items-start mb-4">
               <div>
                 <h3 class="text-xl font-bold mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">${room.name}</h3>
@@ -1072,7 +1187,15 @@
                 <p class="font-semibold mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 0.9}px;">👤 ${status.customer_name}</p>
                 <p class="text-sm mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 0.8}px;">⏰ Masuk: ${formatTime(status.start_time)}</p>
                 <p class="text-sm mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 0.8}px;">🏁 Keluar: ${formatTime(status.end_time)}</p>
-                <p class="text-sm font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">⏳ Sisa: ${getTimeRemaining(status.end_time)}</p>
+                
+                <!-- --- ELEMEN TIMER BARU --- -->
+                <p class="room-timer-display text-sm font-bold" 
+                   style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;"
+                   data-end-time="${status.end_time}"
+                   data-room-id="${status.id}">
+                  ⏳ Sisa: Menghitung...
+                </p>
+                
               </div>
               <button onclick='handleCheckout(${JSON.stringify(status).replace(/"/g, "&quot;")})' class="w-full py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
                 💰 Checkout - ${formatCurrency(status.total_price)}
@@ -1188,7 +1311,9 @@
         app.innerHTML = renderLogin();
       } else if (currentView === 'dashboard') {
         app.innerHTML = renderDashboard();
-        // Hapus interval, karena onSnapshot sudah menangani update
+        // --- BARU: Update timer sekali saat dashboard di-render ---
+        // (Timer interval akan menangani update selanjutnya)
+        updateRoomTimers(); 
       } else if (currentView === 'booking-form') {
         app.innerHTML = renderBookingForm();
       }
