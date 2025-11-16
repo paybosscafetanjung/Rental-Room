@@ -8,6 +8,9 @@
   <!-- SDK Asli tidak digunakan, kita akan gunakan Firebase -->
   
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- LIBRARY BARU: Untuk membuat file Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  
   <style>
     body {
       box-sizing: border-box;
@@ -39,7 +42,7 @@
   </style>
   <style>@view-transition { navigation: auto; }</style>
 </head>
-<body class="min-h-full bg-gradient-to-br from-amber-50 to-orange-100">
+<body class="min-h-full bg-gray-100"> <!-- WARNA BODY DIGANTI -->
   <div id="app" class="min-h-full p-4"></div>
 
   <!--
@@ -122,11 +125,11 @@
       karaoke_k3_service: "10000",
       
       // --- KONFIGURASI TAMPILAN ---
-      background_color: "#FEF3C7",
-      surface_color: "#FFFFFF",
-      text_color: "#78350F",
-      primary_action_color: "#F59E0B",
-      secondary_action_color: "#FB923C",
+      background_color: "#F3F4F6", // Abu-abu muda (Modern)
+      surface_color: "#FFFFFF",    // Putih (Bersih)
+      text_color: "#1F2937",       // Abu-abu gelap (Teks profesional)
+      primary_action_color: "#3B82F6", // Biru (Tombol utama)
+      secondary_action_color: "#6B7280", // Abu-abu (Tombol sekunder)
       font_family: "Inter",
       font_size: 16
     };
@@ -410,13 +413,7 @@
     // --- FUNGSI LAMA (DIHAPUS) ---
     /*
     function getPricePerHour(roomType) {
-      const config = window.elementSdk?.config || defaultConfig;
-      const prices = {
-        billiard: parseInt(config.billiard_price) || 50000,
-        karaoke: parseInt(config.karaoke_price) || 75000,
-        massage: parseInt(config.massage_price) || 30000
-      };
-      return prices[roomType] || 0;
+      // ...
     }
     */
 
@@ -433,6 +430,92 @@
       const date = new Date(isoString);
       return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
+
+    // --- FUNGSI HELPER BARU UNTUK LAPORAN ---
+    
+    // Cek apakah tanggal berada di minggu ini (Senin - Minggu)
+    function isDateInThisWeek(date) {
+      const today = new Date();
+      const firstDayOfWeek = new Date(today);
+      const day = today.getDay(); // 0 (Minggu) - 6 (Sabtu)
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Hitung mundur ke Senin
+      firstDayOfWeek.setDate(diff);
+      firstDayOfWeek.setHours(0, 0, 0, 0);
+
+      const lastDayOfWeek = new Date(firstDayOfWeek);
+      lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+      lastDayOfWeek.setHours(23, 59, 59, 999);
+
+      return date >= firstDayOfWeek && date <= lastDayOfWeek;
+    }
+
+    // Cek apakah tanggal berada di bulan ini
+    function isDateInThisMonth(date) {
+      const today = new Date();
+      return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+    }
+    
+    // --- FUNGSI UTAMA BARU UNTUK LAPORAN EXCEL ---
+    function generateExcelReport(reportType) {
+      // 1. Dapatkan semua booking yang sudah 'completed'
+      const completedBookings = allBookings.filter(b => 
+        b.status === 'completed' && b.created_at
+      );
+
+      // 2. Filter berdasarkan tipe laporan (mingguan/bulanan)
+      let filteredBookings;
+      let fileName = "Laporan_Pendapatan.xlsx";
+
+      if (reportType === 'weekly') {
+        filteredBookings = completedBookings.filter(b => isDateInThisWeek(new Date(b.created_at)));
+        fileName = `Laporan_Mingguan_${formatDate(new Date()).replace(/\//g, '-')}.xlsx`;
+      } else if (reportType === 'monthly') {
+        filteredBookings = completedBookings.filter(b => isDateInThisMonth(new Date(b.created_at)));
+        fileName = `Laporan_Bulanan_${new Date().getMonth() + 1}_${new Date().getFullYear()}.xlsx`;
+      } else {
+        console.error("Tipe laporan tidak dikenal");
+        return;
+      }
+
+      if (filteredBookings.length === 0) {
+        alert("Tidak ada data pendapatan yang selesai (completed) untuk periode ini.");
+        return;
+      }
+
+      // 3. Ubah data menjadi format yang diinginkan untuk Excel
+      const dataForExcel = filteredBookings.map(b => ({
+        "Tanggal": formatDate(b.created_at),
+        "Waktu": formatTime(b.created_at),
+        "Kasir": b.created_by,
+        "Pelanggan": b.customer_name,
+        "Ruangan": `${b.room_number} (${b.room_type})`,
+        "Durasi (Jam)": b.duration_hours,
+        "Biaya Sewa": (b.price_per_hour * b.duration_hours),
+        "Biaya Service": b.service_charge,
+        "Total Pendapatan": b.total_price
+      }));
+
+      // 4. Hitung Total Pendapatan
+      const totalRevenue = dataForExcel.reduce((sum, row) => sum + row["Total Pendapatan"], 0);
+
+      // 5. Buat Worksheet (lembar kerja) menggunakan SheetJS
+      const ws = XLSX.utils.json_to_sheet(dataForExcel);
+      
+      // 6. Tambahkan baris TOTAL di bagian bawah
+      XLSX.utils.sheet_add_aoa(ws, [
+        [], // Baris kosong
+        ["", "", "", "", "", "", "", "GRAND TOTAL", totalRevenue]
+      ], { origin: -1 }); // Menambahkan di akhir sheet
+
+      // 7. Buat Workbook (file Excel)
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Pendapatan");
+
+      // 8. Trigger download file Excel
+      XLSX.writeFile(wb, fileName);
+    }
+    
+    // ---------------------------------------------
 
     function getRoomStatus(roomId) {
       const activeBooking = allBookings.find(b => 
@@ -612,6 +695,13 @@
       document.getElementById('cancel-checkout').onclick = () => {
         document.body.removeChild(confirmDiv);
       };
+    }
+
+    // --- FUNGSI BARU ---
+    // Dipanggil oleh tombol 'Batal' di form booking
+    function handleCancelBooking() {
+      currentView = 'dashboard';
+      renderApp();
     }
 
     // --- TIDAK ADA PERUBAHAN DI FUNGSI RENDER ---
@@ -933,6 +1023,24 @@
         </div>
       ` : '';
       
+      // --- BAGIAN BARU (HANYA UNTUK MANAGER) ---
+      const managerReportsSection = currentUser.role === 'Manager' ? `
+        <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
+          <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📄 Laporan Pendapatan</h3>
+          <p class="text-sm mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
+            Download laporan pendapatan (hanya dari transaksi 'completed') dalam format Excel.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-4">
+            <button onclick="generateExcelReport('weekly')" class="flex-1 py-3 px-4 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
+              💾 Download Laporan Minggu Ini
+            </button>
+            <button onclick="generateExcelReport('monthly')" class="flex-1 py-3 px-4 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
+              💾 Download Laporan Bulan Ini
+            </button>
+          </div>
+        </div>
+      ` : '';
+      
       const roomCards = allRooms.map(room => {
         const status = getRoomStatus(room.id);
         const isActive = status !== null;
@@ -995,6 +1103,8 @@
             
             ${managerControlsSection} <!-- Panel Kontrol Manager Ditambahkan -->
             
+            ${managerReportsSection} <!-- Panel Laporan Manager Ditambahkan -->
+            
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               ${roomCards}
             </div>
@@ -1052,7 +1162,7 @@
                   <button type="submit" id="submit-booking" class="flex-1 py-3 rounded-lg text-white font-bold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
                     ✅ Simpan Booking
                   </button>
-                  <button type="button" onclick="currentView = 'dashboard'; renderApp();" class="flex-1 py-3 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                  <button type="button" onclick="handleCancelBooking()" class="flex-1 py-3 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                     ❌ Batal
                   </button>
                 </div>
@@ -1095,6 +1205,8 @@
     window.handleBookingSubmit = handleBookingSubmit;
     window.handleCheckout = handleCheckout;
     window.toggleServiceStatus = toggleServiceStatus; // <-- Fungsi baru di-globalize
+    window.handleCancelBooking = handleCancelBooking; // <-- Fungsi 'Batal' di-globalize
+    window.generateExcelReport = generateExcelReport; // <-- Fungsi Laporan Excel di-globalize
 
     // Mulai aplikasi
     initApp();
