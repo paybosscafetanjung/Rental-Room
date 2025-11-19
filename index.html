@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pay Boss Entertainment Manager</title>
   
-  <!-- SDK Asli tidak digunakan, kita akan gunakan Firebase -->
-  
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- LIBRARY BARU: Untuk membuat file Excel -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
   
   <style>
@@ -54,6 +51,7 @@
       animation: slideIn 0.3s ease-out;
     }
     
+    /* CSS Print bawaan browser tetap disimpan sebagai cadangan */
     @media print {
       body * { visibility: hidden; }
       #receipt-print, #receipt-print * { visibility: visible; }
@@ -62,29 +60,18 @@
   </style>
   <style>@view-transition { navigation: auto; }</style>
 </head>
-<body class="min-h-full bg-gray-100"> <!-- WARNA BODY DIGANTI -->
+<body class="min-h-full bg-gray-100">
   <div id="app" class="min-h-full p-4"></div>
 
-  <!--
-    ==========================================
-    MOCK ELEMENT SDK (UNTUK STYLING)
-    ==========================================
-    Ini adalah simulasi untuk elementSdk agar
-    konfigurasi tema (warna, font) tetap berfungsi.
-  -->
   <script>
     (function() {
-      // Mock untuk Data SDK DIHAPUS. Kita akan gunakan Firebase.
-
-      // 2. Mock untuk Element SDK
       let mockConfig = null;
       let globalConfigChangeHandler = null;
 
       window.elementSdk = {
-        config: {}, // Akan diisi oleh aplikasi saat init
+        config: {}, 
         init: (options) => {
           console.log("Mock Element SDK Initialized");
-          // Ambil konfigurasi default dari aplikasi
           mockConfig = options.defaultConfig || {};
           window.elementSdk.config = mockConfig;
           globalConfigChangeHandler = options.onConfigChange;
@@ -99,7 +86,6 @@
           };
         },
         setConfig: (newConfig) => {
-          console.log("Mock Element SDK: SetConfig", newConfig);
           mockConfig = Object.assign(window.elementSdk.config, newConfig);
           if (globalConfigChangeHandler) {
             globalConfigChangeHandler(mockConfig);
@@ -108,61 +94,44 @@
       };
     })();
   </script>
-  <!-- ========================================== -->
-  <!-- SCRIPT FIREBASE & APLIKASI -->
-  <!-- ========================================== -->
+
   <script type="module">
-    // Import Firebase
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, addDoc, updateDoc, onSnapshot, collection, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const defaultConfig = {
       app_title: "One Stop Entertainment Pay Boss",
-
-      // --- SERVICE STATUS (fitur baru) ---
-      // "true" atau "false". Mengontrol apakah layanan muncul di dashboard.
-      billiard_enabled: "false", // <-- UBAH INI JADI "false"
+      billiard_enabled: "false", 
       karaoke_enabled: "true",
-      massage_enabled: "false", // <-- UBAH INI JADI "false"
-
-      // --- HARGA & SERVICE ---
-      // (Harga Biliard & Massage)
+      massage_enabled: "false", 
       billiard_price: "50000",
       billiard_service: "0",
-      
       massage_price: "30000",
       massage_service: "0",
-
-      // (Harga baru Karaoke per room)
-      karaoke_k1_price: "175000", // Room 1 Besar
+      karaoke_k1_price: "175000", 
       karaoke_k1_service: "15000",
-      
-      karaoke_k2_price: "100000", // Room 2
+      karaoke_k2_price: "100000", 
       karaoke_k2_service: "10000",
-      
-      karaoke_k3_price: "100000", // Room 3
+      karaoke_k3_price: "100000", 
       karaoke_k3_service: "10000",
-      
-      // --- KONFIGURASI TAMPILAN ---
-      background_color: "#F3F4F6", // Abu-abu muda (Modern)
-      surface_color: "#FFFFFF",    // Putih (Bersih)
-      text_color: "#1F2937",       // Abu-abu gelap (Teks profesional)
-      primary_action_color: "#3B82F6", // Biru (Tombol utama)
-      secondary_action_color: "#6B7280", // Abu-abu (Tombol sekunder)
+      background_color: "#F3F4F6", 
+      surface_color: "#FFFFFF",    
+      text_color: "#1F2937",       
+      primary_action_color: "#3B82F6", 
+      secondary_action_color: "#6B7280", 
       font_family: "Inter",
       font_size: 16
     };
     
-    // Variabel global Firebase
     let db, auth, app, userId, appId;
-    let unsubscribeBookings = null; // Untuk listener snapshot
-    let roomTimerInterval = null; // --- BARU: Untuk timer real-time ---
-    let audioCtx = null; // --- BARU: Untuk notifikasi suara ---
-    let playedSounds = {}; // --- BARU: Mencegah suara berulang ---
+    let unsubscribeBookings = null; 
+    let roomTimerInterval = null; 
+    let audioCtx = null; 
+    let playedSounds = {}; 
 
-    let currentUser = null; // User aplikasi (Kasir/Manager)
-    let allBookings = []; // Data dari Firebase
+    let currentUser = null; 
+    let allBookings = []; 
     let currentView = 'login';
     let selectedBooking = null;
 
@@ -175,29 +144,24 @@
     const ROOMS = {
       billiard: [{ id: 'B1', name: 'Billiard 1', type: 'billiard' }],
       karaoke: [
-        { id: 'K1', name: 'Karaoke 1 (Besar)', type: 'karaoke' }, // Nama diubah
+        { id: 'K1', name: 'Karaoke 1 (Besar)', type: 'karaoke' }, 
         { id: 'K2', name: 'Karaoke 2', type: 'karaoke' },
         { id: 'K3', name: 'Karaoke 3', type: 'karaoke' }
       ],
       massage: [{ id: 'M1', name: 'KursI Pijat 1', type: 'massage' }]
     };
 
-    // Handler ini dipanggil oleh onSnapshot
     const dataHandler = {
       onDataChanged(data) {
         allBookings = data;
         if (currentView !== 'login') {
           renderApp();
-          // --- BARU: Perbarui juga timer setiap ada data baru ---
           updateRoomTimers(); 
         }
       }
     };
 
-    // Menggantikan initApp() asli
     async function initializeFirebaseAndAuth() {
-      // KONFIGURASI FIREBASE ANDA DIMASUKKAN DI SINI
-      // --- INI ADALAH KONFIGURASI BARU ANDA ---
       const firebaseConfig = {
         apiKey: "AIzaSyCom-U-BP75_6j_9dwCXdA0VD1vmfCopOg",
         authDomain: "paybossmanager.firebaseapp.com",
@@ -206,217 +170,116 @@
         messagingSenderId: "627431696008",
         appId: "1:627431696008:web:56137065fbd9aee32b613d"
       };
-      // ----------------------------------------
-
-      // Kita set appId ke projectId untuk konsistensi
       appId = firebaseConfig.projectId || 'default-app-id';
 
       if (!firebaseConfig.apiKey) {
         console.error("Firebase config missing!");
-        document.getElementById('app').innerHTML = `<div class="p-4 text-red-700">Firebase config not found. App cannot start.</div>`;
         return;
       }
 
       app = initializeApp(firebaseConfig);
       db = getFirestore(app);
       auth = getAuth(app);
-      setLogLevel('Debug'); // Tampilkan log Firebase
+      setLogLevel('Debug'); 
 
       onAuthStateChanged(auth, (user) => {
         if (user) {
           userId = user.uid;
-          console.log("Firebase User authenticated:", user); // Log lebih detail
-          // User sudah login, muat data booking
           loadBookings();
         } else {
-          // User belum login, render halaman login
-          console.log("Firebase User not authenticated.");
           userId = null;
           if (unsubscribeBookings) {
-            unsubscribeBookings(); // Hentikan listener lama
+            unsubscribeBookings(); 
             unsubscribeBookings = null;
           }
-          stopRoomTimer(); // --- BARU: Hentikan timer saat auth hilang ---
-          renderApp(); // Pastikan renderApp dipanggil
+          stopRoomTimer(); 
+          renderApp(); 
         }
       });
 
-      // Coba login
       try {
-        // DIMODIFIKASI: Karena kita menggunakan konfigurasi Firebase kustom,
-        // kita tidak boleh menggunakan __initial_auth_token (yang mana
-        // ditujukan untuk project lain).
-        // Kita HARUS login secara anonim ke project kita sendiri.
         await signInAnonymously(auth);
-        
       } catch (error) {
         console.error("Firebase sign-in failed:", error);
       }
     }
     
-    // Fungsi baru untuk memuat dan mendengarkan data booking
     function loadBookings() {
-      if (!userId) {
-        console.log("loadBookings skipped: userId not available.");
-        return; 
-      }
+      if (!userId) return; 
       
-      // Hentikan listener sebelumnya jika ada
       if (unsubscribeBookings) {
         unsubscribeBookings();
       }
 
-      // DIMODIFIKASI: Path dikembalikan ke users/{userId}/bookings
-      // Ini adalah path yang aman dan benar secara struktur.
-      // --- PERUBAHAN SOLUSI: Kita akan menggunakan path 'publik' yang sama untuk semua user ---
       const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
-      console.log('Attempting to listen to Firestore at path:', collectionRef.path);
       
-      // Dengarkan perubahan data secara real-time
       unsubscribeBookings = onSnapshot(collectionRef, (snapshot) => {
-        console.log("Firestore data updated!");
         const bookingsData = snapshot.docs.map(doc => ({
-          id: doc.id, // Penting: tambahkan ID dokumen Firestore
+          id: doc.id, 
           ...doc.data()
         }));
         dataHandler.onDataChanged(bookingsData);
       }, (error) => {
         console.error("Error listening to Firestore:", error);
-        console.error("PASTIKAN FIREBASE SECURITY RULES ANDA MENGIZINKAN AKSES 'read' ke path:", collectionRef.path);
       });
     }
 
-    // Fungsi init utama aplikasi
     async function initApp() {
-      // 1. Inisialisasi Firebase & Autentikasi
       await initializeFirebaseAndAuth();
 
-      // 2. Inisialisasi Element SDK (Mock)
-      // Ini harus dipanggil setelah Firebase init agar config-nya siap
       window.elementSdk.init({
         defaultConfig,
         onConfigChange,
         mapToCapabilities: (config) => ({
           recolorables: [
-            {
-              get: () => config.background_color || defaultConfig.background_color,
-              set: (value) => {
-                config.background_color = value;
-                window.elementSdk.setConfig({ background_color: value });
-              }
-            },
-            {
-              get: () => config.surface_color || defaultConfig.surface_color,
-              set: (value) => {
-                config.surface_color = value;
-                window.elementSdk.setConfig({ surface_color: value });
-              }
-            },
-            {
-              get: () => config.text_color || defaultConfig.text_color,
-              set: (value) => {
-                config.text_color = value;
-                window.elementSdk.setConfig({ text_color: value });
-              }
-            },
-            {
-              get: () => config.primary_action_color || defaultConfig.primary_action_color,
-              set: (value) => {
-                config.primary_action_color = value;
-                window.elementSdk.setConfig({ primary_action_color: value });
-              }
-            },
-            {
-              get: () => config.secondary_action_color || defaultConfig.secondary_action_color,
-              set: (value) => {
-                config.secondary_action_color = value;
-                window.elementSdk.setConfig({ secondary_action_color: value });
-              }
-            }
+            { get: () => config.background_color, set: (v) => { config.background_color = v; window.elementSdk.setConfig({background_color: v}); }},
+            { get: () => config.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({surface_color: v}); }},
+            { get: () => config.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({text_color: v}); }},
+            { get: () => config.primary_action_color, set: (v) => { config.primary_action_color = v; window.elementSdk.setConfig({primary_action_color: v}); }},
+            { get: () => config.secondary_action_color, set: (v) => { config.secondary_action_color = v; window.elementSdk.setConfig({secondary_action_color: v}); }}
           ],
-          borderables: [],
-          fontEditable: {
-            get: () => config.font_family || defaultConfig.font_family,
-            set: (value) => {
-              config.font_family = value;
-              window.elementSdk.setConfig({ font_family: value });
-            }
-          },
-          fontSizeable: {
-            get: () => config.font_size || defaultConfig.font_size,
-            set: (value) => {
-              config.font_size = value;
-              window.elementSdk.setConfig({ font_size: value });
-            }
-          }
+          fontEditable: { get: () => config.font_family, set: (v) => { config.font_family = v; window.elementSdk.setConfig({font_family: v}); }},
+          fontSizeable: { get: () => config.font_size, set: (v) => { config.font_size = v; window.elementSdk.setConfig({font_size: v}); }}
         }),
         mapToEditPanelValues: (config) => new Map([
-          ["app_title", config.app_title || defaultConfig.app_title],
-          
-          // Status
-          ["billiard_enabled", config.billiard_enabled !== "false"], // boolean
-          ["karaoke_enabled", config.karaoke_enabled !== "false"], // boolean
-          ["massage_enabled", config.massage_enabled !== "false"], // boolean
-
-          // Harga Biliard & Massage
-          ["billiard_price", config.billiard_price || defaultConfig.billiard_price],
-          ["billiard_service", config.billiard_service || defaultConfig.billiard_service],
-          ["massage_price", config.massage_price || defaultConfig.massage_price],
-          ["massage_service", config.massage_service || defaultConfig.massage_service],
-          
-          // Harga Karaoke (K1, K2, K3)
-          ["karaoke_k1_price", config.karaoke_k1_price || defaultConfig.karaoke_k1_price],
-          ["karaoke_k1_service", config.karaoke_k1_service || defaultConfig.karaoke_k1_service],
-          ["karaoke_k2_price", config.karaoke_k2_price || defaultConfig.karaoke_k2_price],
-          ["karaoke_k2_service", config.karaoke_k2_service || defaultConfig.karaoke_k2_service],
-          ["karaoke_k3_price", config.karaoke_k3_price || defaultConfig.karaoke_k3_price],
-          ["karaoke_k3_service", config.karaoke_k3_service || defaultConfig.karaoke_k3_service]
+          ["app_title", config.app_title],
+          ["billiard_enabled", config.billiard_enabled !== "false"],
+          ["karaoke_enabled", config.karaoke_enabled !== "false"],
+          ["massage_enabled", config.massage_enabled !== "false"],
+          ["billiard_price", config.billiard_price],
+          ["billiard_service", config.billiard_service],
+          ["massage_price", config.massage_price],
+          ["massage_service", config.massage_service],
+          ["karaoke_k1_price", config.karaoke_k1_price],
+          ["karaoke_k1_service", config.karaoke_k1_service],
+          ["karaoke_k2_price", config.karaoke_k2_price],
+          ["karaoke_k2_service", config.karaoke_k2_service],
+          ["karaoke_k3_price", config.karaoke_k3_price],
+          ["karaoke_k3_service", config.karaoke_k3_service]
         ])
       });
       
-      // Render awal
       renderApp();
     }
 
-    // --- FUNGSI BARU ---
-    // Menggantikan getPricePerHour. Sekarang mengambil harga per jam DAN service charge.
     function getRoomDetails(room) {
       const config = window.elementSdk?.config || defaultConfig;
-      const { id } = room; // ID unik ruangan (K1, B1, M1)
+      const { id } = room; 
 
       let price = 0;
       let service = 0;
 
       switch (id) {
-        case 'B1':
-          price = parseInt(config.billiard_price) || 0;
-          service = parseInt(config.billiard_service) || 0;
-          break;
-        case 'M1':
-          price = parseInt(config.massage_price) || 0;
-          service = parseInt(config.massage_service) || 0;
-          break;
-        case 'K1':
-          price = parseInt(config.karaoke_k1_price) || 0;
-          service = parseInt(config.karaoke_k1_service) || 0;
-          break;
-        case 'K2':
-          price = parseInt(config.karaoke_k2_price) || 0;
-          service = parseInt(config.karaoke_k2_service) || 0;
-          break;
-        case 'K3':
-          price = parseInt(config.karaoke_k3_price) || 0;
-          service = parseInt(config.karaoke_k3_service) || 0;
-          break;
-        default:
-          price = 0;
-          service = 0;
+        case 'B1': price = parseInt(config.billiard_price) || 0; service = parseInt(config.billiard_service) || 0; break;
+        case 'M1': price = parseInt(config.massage_price) || 0; service = parseInt(config.massage_service) || 0; break;
+        case 'K1': price = parseInt(config.karaoke_k1_price) || 0; service = parseInt(config.karaoke_k1_service) || 0; break;
+        case 'K2': price = parseInt(config.karaoke_k2_price) || 0; service = parseInt(config.karaoke_k2_service) || 0; break;
+        case 'K3': price = parseInt(config.karaoke_k3_price) || 0; service = parseInt(config.karaoke_k3_service) || 0; break;
+        default: price = 0; service = 0;
       }
       return { price_per_hour: price, service_charge: service };
     }
     
-    // --- FUNGSI BARU ---
-    // Cek apakah sebuah layanan (billiard, karaoke, massage) diaktifkan di config
     function isServiceEnabled(roomType) {
       const config = window.elementSdk?.config || defaultConfig;
       if (roomType === 'billiard') return config.billiard_enabled !== "false";
@@ -425,17 +288,11 @@
       return false;
     }
     
-    // --- FUNGSI BARU ---
-    // Untuk tombol manager (simulasi, non-permanen)
     function toggleServiceStatus(serviceType) {
       const config = window.elementSdk?.config || defaultConfig;
-      const key = `${serviceType}_enabled`; // e.g., "billiard_enabled"
-      const currentValue = config[key] !== "false"; // Cek status saat ini
-      const newValue = !currentValue; // Balikkan status
-      
-      // Ini adalah MOCK. Mengupdate config di 'elementSdk'
-      // onConfigChange akan dipanggil, lalu me-render ulang aplikasi.
-      // Akan reset jika halaman di-refresh.
+      const key = `${serviceType}_enabled`;
+      const currentValue = config[key] !== "false";
+      const newValue = !currentValue;
       window.elementSdk.setConfig({ [key]: newValue.toString() });
     }
 
@@ -453,14 +310,11 @@
       return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
     }
 
-    // --- FUNGSI HELPER BARU UNTUK LAPORAN ---
-    
-    // Cek apakah tanggal berada di minggu ini (Senin - Minggu)
     function isDateInThisWeek(date) {
       const today = new Date();
       const firstDayOfWeek = new Date(today);
-      const day = today.getDay(); // 0 (Minggu) - 6 (Sabtu)
-      const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Hitung mundur ke Senin
+      const day = today.getDay(); 
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1); 
       firstDayOfWeek.setDate(diff);
       firstDayOfWeek.setHours(0, 0, 0, 0);
 
@@ -471,20 +325,16 @@
       return date >= firstDayOfWeek && date <= lastDayOfWeek;
     }
 
-    // Cek apakah tanggal berada di bulan ini
     function isDateInThisMonth(date) {
       const today = new Date();
       return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
     }
     
-    // --- FUNGSI UTAMA BARU UNTUK LAPORAN EXCEL ---
     function generateExcelReport(reportType) {
-      // 1. Dapatkan semua booking yang sudah 'completed'
       const completedBookings = allBookings.filter(b => 
         b.status === 'completed' && b.created_at
       );
 
-      // 2. Filter berdasarkan tipe laporan (mingguan/bulanan)
       let filteredBookings;
       let fileName = "Laporan_Pendapatan.xlsx";
 
@@ -495,7 +345,6 @@
         filteredBookings = completedBookings.filter(b => isDateInThisMonth(new Date(b.created_at)));
         fileName = `Laporan_Bulanan_${new Date().getMonth() + 1}_${new Date().getFullYear()}.xlsx`;
       } else {
-        console.error("Tipe laporan tidak dikenal");
         return;
       }
 
@@ -504,7 +353,6 @@
         return;
       }
 
-      // 3. Ubah data menjadi format yang diinginkan untuk Excel
       const dataForExcel = filteredBookings.map(b => ({
         "Tanggal": formatDate(b.created_at),
         "Waktu": formatTime(b.created_at),
@@ -517,33 +365,20 @@
         "Total Pendapatan": b.total_price
       }));
 
-      // 4. Hitung Total Pendapatan
       const totalRevenue = dataForExcel.reduce((sum, row) => sum + row["Total Pendapatan"], 0);
-
-      // 5. Buat Worksheet (lembar kerja) menggunakan SheetJS
       const ws = XLSX.utils.json_to_sheet(dataForExcel);
       
-      // 6. Tambahkan baris TOTAL di bagian bawah
       XLSX.utils.sheet_add_aoa(ws, [
-        [], // Baris kosong
+        [], 
         ["", "", "", "", "", "", "", "GRAND TOTAL", totalRevenue]
-      ], { origin: -1 }); // Menambahkan di akhir sheet
+      ], { origin: -1 }); 
 
-      // 7. Buat Workbook (file Excel)
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Pendapatan");
-
-      // 8. Trigger download file Excel
       XLSX.writeFile(wb, fileName);
     }
     
-    // ---------------------------------------------
-    
-    // --- FUNGSI BARU UNTUK NOTIFIKASI SUARA ---
     function playNotificationSound() {
-      // Inisialisasi AudioContext saat pertama kali dibutuhkan
-      // (Harus dipicu oleh interaksi user, seperti 'click', tapi
-      // kita coba langsung, jika gagal, user harus klik dulu)
       if (!audioCtx) {
         try {
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -553,68 +388,58 @@
         }
       }
 
-      // Buat suara beep
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
 
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
 
-      oscillator.type = 'sine'; // Tipe gelombang suara
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Frekuensi (Hz) - nada tinggi
-      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime); // Volume
+      oscillator.type = 'sine'; 
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
+      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime); 
 
       oscillator.start(audioCtx.currentTime);
-      oscillator.stop(audioCtx.currentTime + 0.3); // Durasi beep (0.3 detik)
+      oscillator.stop(audioCtx.currentTime + 0.3); 
     }
     
-    // --- FUNGSI BARU UNTUK TIMER REAL-TIME ---
     function startRoomTimer() {
-      // Hentikan timer lama jika ada
       stopRoomTimer();
-      // Mulai timer baru, update setiap detik
       roomTimerInterval = setInterval(updateRoomTimers, 1000);
-      playedSounds = {}; // Reset daftar suara yang sudah diputar
-      console.log("Room timer started.");
+      playedSounds = {}; 
     }
 
     function stopRoomTimer() {
       if (roomTimerInterval) {
         clearInterval(roomTimerInterval);
         roomTimerInterval = null;
-        console.log("Room timer stopped.");
       }
     }
     
     function updateRoomTimers() {
-      // Cari semua elemen timer di dashboard
       const timerDisplays = document.querySelectorAll('.room-timer-display');
-      if (timerDisplays.length === 0) return; // Tidak ada timer aktif
+      if (timerDisplays.length === 0) return; 
 
       const now = new Date();
       
       timerDisplays.forEach(display => {
         const endTimeStr = display.dataset.endTime;
-        const roomId = display.dataset.roomId; // Kita butuh ID unik untuk audio
+        const roomId = display.dataset.roomId; 
         if (!endTimeStr) return;
         
         const end = new Date(endTimeStr);
         const diff = end - now;
         
-        const card = display.closest('.room-card'); // Dapatkan elemen kartu terdekat
+        const card = display.closest('.room-card'); 
         
         if (diff <= 0) {
           display.textContent = 'Waktu Habis!';
-          // Tambah class notifikasi visual
           if (card && !card.classList.contains('expired-room')) {
             card.classList.add('expired-room');
-            card.classList.remove('active-room'); // Hapus animasi biru
+            card.classList.remove('active-room'); 
             
-            // --- LOGIKA SUARA BARU ---
-            // Hanya mainkan suara JIKA belum pernah dimainkan untuk room ini
             if (!playedSounds[roomId]) {
               playNotificationSound();
-              playedSounds[roomId] = true; // Tandai sudah diputar
+              playedSounds[roomId] = true; 
             }
           }
         } else {
@@ -623,7 +448,6 @@
           const seconds = Math.floor((diff % (1000 * 60)) / 1000);
           
           display.textContent = `⏳ Sisa: ${hours}j ${minutes}m ${seconds}s`;
-          // Pastikan class notifikasi visual dihapus jika (mungkin) ada kesalahan
           if (card) {
             card.classList.remove('expired-room');
             card.classList.add('active-room');
@@ -639,10 +463,6 @@
       return activeBooking || null;
     }
 
-    // DIMODIFIKASI: Tidak lagi dipakai, digantikan oleh updateRoomTimers
-    // function getTimeRemaining(endTime) { ... }
-
-    // Login ini hanya untuk UI, bukan Firebase Auth
     async function handleLogin(e) {
       e.preventDefault();
       const username = document.getElementById('username').value;
@@ -653,7 +473,7 @@
         currentUser = user;
         currentView = 'dashboard';
         renderApp();
-        startRoomTimer(); // --- BARU: Mulai timer saat login ---
+        startRoomTimer(); 
       } else {
         const errorDiv = document.getElementById('login-error');
         errorDiv.textContent = 'Username atau password salah!';
@@ -664,18 +484,17 @@
     function handleLogout() {
       currentUser = null;
       currentView = 'login';
-      stopRoomTimer(); // --- BARU: Hentikan timer saat logout ---
+      stopRoomTimer(); 
       renderApp();
     }
 
     function showBookingForm(room) {
       selectedBooking = { room, mode: 'new' };
       currentView = 'booking-form';
-      stopRoomTimer(); // --- BARU: Hentikan timer saat pindah halaman ---
+      stopRoomTimer(); 
       renderApp();
     }
 
-    // DIMODIFIKASI: Menggunakan Firestore
     async function handleBookingSubmit(e) {
       e.preventDefault();
       
@@ -703,12 +522,9 @@
       
       const endTime = new Date(startTime.getTime() + duration * 60 * 60 * 1000);
       
-      // --- DIMODIFIKASI ---
-      // Menggunakan fungsi baru untuk mendapatkan harga & service
       const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room);
       const totalPrice = (price_per_hour * duration) + service_charge;
       
-      // --- PERBAIKAN: Definisikan 'booking' object di sini ---
       const booking = {
         room_type: selectedBooking.room.type,
         room_number: selectedBooking.room.id,
@@ -717,9 +533,9 @@
         duration_hours: duration,
         end_time: endTime.toISOString(),
         status: bookingType === 'open' ? 'active' : 'booked',
-        price_per_hour: price_per_hour, // Harga per jam
-        service_charge: service_charge, // Biaya service (BARU)
-        total_price: totalPrice, // Total (harga * jam + service)
+        price_per_hour: price_per_hour, 
+        service_charge: service_charge, 
+        total_price: totalPrice, 
         created_by: currentUser.name,
         created_at: now.toISOString()
       };
@@ -728,30 +544,22 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Menyimpan...';
       
-      // --- PERBAIKAN: Definisikan 'collectionRef' di luar try...catch ---
       const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
       
       try {
-        // Path sudah didefinisikan di atas
-        console.log('Attempting to write to Firestore at path:', collectionRef.path);
-        await addDoc(collectionRef, booking); // 'booking' sekarang terdefinisi
-        
-        // onSnapshot akan otomatis update UI
+        await addDoc(collectionRef, booking); 
         currentView = 'dashboard';
         renderApp();
-        startRoomTimer(); // --- BARU: Mulai lagi timer saat kembali ke dashboard ---
+        startRoomTimer(); 
 
       } catch (error) {
         console.error("Error adding document: ", error);
-        // 'collectionRef' sekarang terdefinisi di sini
-        console.error("PASTIKAN FIREBASE SECURITY RULES ANDA MENGIZINKAN AKSES 'create' ke path:", collectionRef.path);
         alert('Gagal menyimpan booking. Silakan coba lagi.');
         submitBtn.disabled = false;
         submitBtn.textContent = 'Simpan Booking';
       }
     }
 
-    // DIMODIFIKASI: Menggunakan Firestore
     async function handleCheckout(booking) {
       const confirmDiv = document.createElement('div');
       confirmDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 slide-in';
@@ -779,27 +587,20 @@
            return;
         }
 
-        // DIMODIFIKASI: Path dikembalikan ke users/{userId}/bookings
-        // --- PERUBAHAN SOLUSI: Kita akan menggunakan path 'publik' yang sama untuk semua user ---
         const docRef = doc(db, 'payboss_bookings', appId, 'all_bookings', booking.id);
-        console.log('Attempting to update Firestore doc at path:', docRef.path);
         
         try {
           await updateDoc(docRef, {
             status: 'completed'
           });
           
-          // onSnapshot akan update UI dashboard
-          // Kita hanya perlu tampilkan struk
           document.body.removeChild(confirmDiv);
           
-          // Buat objek booking yang diupdate untuk struk
           const updatedBookingForReceipt = { ...booking, status: 'completed' };
           showReceipt(updatedBookingForReceipt);
 
         } catch (error) {
           console.error("Error updating document: ", error);
-          console.error("PASTIKAN FIREBASE SECURITY RULES ANDA MENGIZINKAN AKSES 'update' ke path:", docRef.path);
           alert("Gagal melakukan checkout. Coba lagi.");
           document.body.removeChild(confirmDiv);
         }
@@ -810,16 +611,69 @@
       };
     }
 
-    // --- FUNGSI BARU ---
-    // Dipanggil oleh tombol 'Batal' di form booking
     function handleCancelBooking() {
       currentView = 'dashboard';
       renderApp();
-      startRoomTimer(); // --- BARU: Mulai lagi timer saat kembali ke dashboard ---
+      startRoomTimer(); 
     }
 
-    // --- TIDAK ADA PERUBAHAN DI FUNGSI RENDER ---
-    // (Semua fungsi showReceipt, renderLogin, getDailySalesAnalysis, renderDashboard, renderBookingForm tetap sama)
+    // ============================================
+    // FUNGSI BARU: PRINT VIA RAWBT (BLUETOOTH)
+    // ============================================
+    function printViaRawBT(booking) {
+        const receiptWidth = 32; 
+        const pad = (str, len, char = ' ') => String(str).padEnd(len, char);
+        const padLeft = (str, len, char = ' ') => String(str).padStart(len, char);
+        
+        let receiptText = '';
+
+        receiptText += "         PAY BOSS CAFE\n";
+        receiptText += " Jl. Tanjung Permai No 2 RT 07\n";
+        receiptText += "    Pembataan.Murung Pudak.\n";
+        receiptText += "            Tabalong\n";
+        receiptText += "    Reservasi: 0811-5194-456\n";
+        receiptText += "--------------------------------\n";
+        
+        receiptText += `Pelanggan: ${booking.customer_name}\n`;
+        receiptText += `Kasir    : ${booking.created_by}\n`;
+        receiptText += `Waktu    : ${formatDate(booking.created_at)}\n`;
+        receiptText += "--------------------------------\n";
+
+        // Item Ruangan
+        let itemName = `${booking.room_number} - ${booking.room_type.toUpperCase()} (${booking.duration_hours} Jam)`;
+        if (itemName.length > receiptWidth) {
+            receiptText += pad(itemName.substring(0, receiptWidth), receiptWidth) + "\n";
+            receiptText += pad("  " + itemName.substring(receiptWidth), receiptWidth) + "\n";
+        } else {
+            receiptText += pad(itemName, receiptWidth) + "\n";
+        }
+        
+        const roomPriceTotal = booking.price_per_hour * booking.duration_hours;
+        receiptText += padLeft(formatCurrency(roomPriceTotal), receiptWidth) + "\n";
+
+        // Biaya Service (Jika ada)
+        if (booking.service_charge > 0) {
+             receiptText += pad("Biaya Service", 18) + padLeft(formatCurrency(booking.service_charge), 14) + "\n";
+        }
+
+        receiptText += "--------------------------------\n";
+
+        // Total
+        receiptText += pad("TOTAL", 12) + padLeft(formatCurrency(booking.total_price), 20) + "\n";
+        receiptText += "--------------------------------\n";
+
+        receiptText += "      Wifi : Pay Boss Cafe\n";
+        receiptText += "     Pasword : P4yB0sSC4F3\n";
+        receiptText += "--------------------------------\n";
+        receiptText += "Terimakasih atas kunjungan anda.\n";
+        receiptText += "    Instagram: @Payboss.cafe\n";
+        receiptText += "\n\n\n"; 
+
+        // Encode dan Buka RawBT
+        const encodedReceiptText = encodeURIComponent(receiptText);
+        const rawBtUrl = `rawbt:${encodedReceiptText}`;
+        window.open(rawBtUrl, '_blank');
+    }
 
     function showReceipt(booking) {
       const receiptDiv = document.createElement('div');
@@ -827,7 +681,6 @@
       
       const receiptContent = `
         <div class="bg-white rounded-lg p-6 max-w-md mx-4">
-          <!-- Area Cetak -->
           <div id="receipt-print" class="bg-white p-6">
             <div class="text-center mb-4">
               <h2 class="text-xl font-bold">PAY BOSS CAFE</h2>
@@ -883,10 +736,10 @@
               <p>Password : P4yB0sSC4F3</p>
             </div>
           </div>
-          <!-- Tombol Aksi (Tidak Ikut Tercetak) -->
+          
           <div class="flex gap-3 mt-4">
             <button id="print-receipt" class="flex-1 px-4 py-2 rounded-lg text-white font-semibold" style="background-color: ${window.elementSdk?.config?.primary_action_color || defaultConfig.primary_action_color}">
-              🖨️ Cetak Struk
+              🖨️ Cetak Struk (Bluetooth)
             </button>
             <button id="close-receipt" class="flex-1 px-4 py-2 rounded-lg font-semibold" style="background-color: ${window.elementSdk?.config?.secondary_action_color || defaultConfig.secondary_action_color}; color: white;">
               Tutup
@@ -898,8 +751,9 @@
       receiptDiv.innerHTML = receiptContent;
       document.body.appendChild(receiptDiv);
       
+      // Event Listener Tombol Cetak
       document.getElementById('print-receipt').onclick = () => {
-        window.print();
+        printViaRawBT(booking);
       };
       
       document.getElementById('close-receipt').onclick = () => {
@@ -913,8 +767,6 @@
       const baseFontStack = 'system-ui, -apple-system, sans-serif';
       const baseSize = config.font_size || defaultConfig.font_size;
       
-      // Tampilkan UI login hanya jika Firebase user ada
-      // dan UI user (kasir) belum login
       if (!userId) {
         return `<div class="p-4 text-center" style="color: ${config.text_color};">Menghubungkan ke server...</div>`;
       }
@@ -944,14 +796,6 @@
                 🔐 Login
               </button>
             </form>
-            
-            <!-- 
-            <div class="mt-6 p-4 rounded-lg" style="background-color: ${config.background_color};">
-              <p class="text-sm font-semibold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">Akun Demo:</p>
-              <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">Kasir: kasir1 / kasir123</p>
-              <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">Manager: manager / manager123</p>
-            </div>
-             -->
           </div>
         </div>
       `;
@@ -962,7 +806,6 @@
       const todayStr = today.toDateString();
       
       const todayBookings = allBookings.filter(booking => {
-        // Cek jika created_at ada, jika tidak, gunakan start_time
         const bookingDateStr = booking.created_at || booking.start_time;
         if (!bookingDateStr) return false;
         
@@ -1018,8 +861,6 @@
       const baseFontStack = 'system-ui, -apple-system, sans-serif';
       const baseSize = config.font_size || defaultConfig.font_size;
       
-      // --- DIMODIFIKASI ---
-      // Filter ruangan berdasarkan layanan yang aktif
       const allRoomsRaw = [...ROOMS.billiard, ...ROOMS.karaoke, ...ROOMS.massage];
       const allRooms = allRoomsRaw.filter(room => isServiceEnabled(room.type));
       
@@ -1027,7 +868,6 @@
       
       const salesAnalysisSection = currentUser.role === 'Manager' ? `
         <div class="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <!-- Total Pendapatan Hari Ini -->
           <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
             <div class="flex items-center justify-between">
               <div>
@@ -1039,7 +879,6 @@
             </div>
           </div>
           
-          <!-- Booking Aktif -->
           <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
             <div class="flex items-center justify-between">
               <div>
@@ -1051,7 +890,6 @@
             </div>
           </div>
           
-          <!-- Ruangan Terpopuler -->
           <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
             <div class="flex items-center justify-between">
               <div>
@@ -1065,7 +903,6 @@
             </div>
           </div>
           
-          <!-- Kasir Terbaik -->
           <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
             <div class="flex items-center justify-between">
               <div>
@@ -1083,7 +920,6 @@
           </div>
         </div>
         
-        <!-- Detail Analisa per Kategori -->
         <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
           <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📈 Analisa Penjualan per Kategori</h3>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1112,7 +948,6 @@
         </div>
       ` : '';
       
-      // --- BAGIAN BARU (HANYA UNTUK MANAGER) ---
       const managerControlsSection = currentUser.role === 'Manager' ? `
         <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
           <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">⚙️ Kontrol Layanan</h3>
@@ -1137,7 +972,6 @@
         </div>
       ` : '';
       
-      // --- BAGIAN BARU (HANYA UNTUK MANAGER) ---
       const managerReportsSection = currentUser.role === 'Manager' ? `
         <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
           <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📄 Laporan Pendapatan</h3>
@@ -1159,18 +993,14 @@
         const status = getRoomStatus(room.id);
         const isActive = status !== null;
         
-        // --- DIMODIFIKASI ---
-        // Menggunakan fungsi baru untuk harga & service
         const { price_per_hour, service_charge } = getRoomDetails(room);
         
         return `
-          <!-- --- BARU: Menambahkan class .room-card --- -->
           <div class="room-card p-6 rounded-xl shadow-lg transition-transform hover:scale-105 ${isActive ? 'active-room' : ''}" style="background-color: ${config.surface_color};">
             <div class="flex justify-between items-start mb-4">
               <div>
                 <h3 class="text-xl font-bold mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">${room.name}</h3>
                 
-                <!-- Tampilan harga & service di kartu -->
                 <p class="text-sm" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
                   ${formatCurrency(price_per_hour)}/jam
                   ${service_charge > 0 ? ` (+${formatCurrency(service_charge)} service)` : ''}
@@ -1188,7 +1018,6 @@
                 <p class="text-sm mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 0.8}px;">⏰ Masuk: ${formatTime(status.start_time)}</p>
                 <p class="text-sm mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 0.8}px;">🏁 Keluar: ${formatTime(status.end_time)}</p>
                 
-                <!-- --- ELEMEN TIMER BARU --- -->
                 <p class="room-timer-display text-sm font-bold" 
                    style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;"
                    data-end-time="${status.end_time}"
@@ -1223,10 +1052,8 @@
             </div>
             
             ${salesAnalysisSection}
-            
-            ${managerControlsSection} <!-- Panel Kontrol Manager Ditambahkan -->
-            
-            ${managerReportsSection} <!-- Panel Laporan Manager Ditambahkan -->
+            ${managerControlsSection} 
+            ${managerReportsSection} 
             
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               ${roomCards}
@@ -1242,8 +1069,6 @@
       const baseFontStack = 'system-ui, -apple-system, sans-serif';
       const baseSize = config.font_size || defaultConfig.font_size;
       
-      // --- DIMODIFIKASI ---
-      // Menggunakan fungsi baru untuk harga & service
       const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room);
       
       return `
@@ -1274,7 +1099,6 @@
                 <div>
                   <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Durasi</label>
                   <select id="duration" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                    <!-- Kalkulasi harga di form booking diupdate -->
                     <option value="1">1 Jam - ${formatCurrency((price_per_hour * 1) + service_charge)}</option>
                     <option value="2">2 Jam - ${formatCurrency((price_per_hour * 2) + service_charge)}</option>
                     <option value="3">3 Jam - ${formatCurrency((price_per_hour * 3) + service_charge)}</option>
@@ -1296,23 +1120,16 @@
       `;
     }
 
-    // Fungsi render utama (DIMODIFIKASI)
     function renderApp() {
       const app = document.getElementById('app');
-      
-      // Tampilkan "Loading" jika Firebase auth belum siap
       if (!userId) {
-        app.innerHTML = renderLogin(); // renderLogin akan menampilkan "Menghubungkan..."
+        app.innerHTML = renderLogin(); 
         return;
       }
-      
-      // Jika user Firebase sudah ada, cek user aplikasi (kasir)
       if (currentView === 'login') {
         app.innerHTML = renderLogin();
       } else if (currentView === 'dashboard') {
         app.innerHTML = renderDashboard();
-        // --- BARU: Update timer sekali saat dashboard di-render ---
-        // (Timer interval akan menangani update selanjutnya)
         updateRoomTimers(); 
       } else if (currentView === 'booking-form') {
         app.innerHTML = renderBookingForm();
@@ -1323,17 +1140,15 @@
       renderApp();
     }
     
-    // Globalize functions agar bisa dipanggil dari HTML
     window.handleLogin = handleLogin;
     window.handleLogout = handleLogout;
     window.showBookingForm = showBookingForm;
     window.handleBookingSubmit = handleBookingSubmit;
     window.handleCheckout = handleCheckout;
-    window.toggleServiceStatus = toggleServiceStatus; // <-- Fungsi baru di-globalize
-    window.handleCancelBooking = handleCancelBooking; // <-- Fungsi 'Batal' di-globalize
-    window.generateExcelReport = generateExcelReport; // <-- Fungsi Laporan Excel di-globalize
+    window.toggleServiceStatus = toggleServiceStatus; 
+    window.handleCancelBooking = handleCancelBooking; 
+    window.generateExcelReport = generateExcelReport; 
 
-    // Mulai aplikasi
     initApp();
   </script>
 </body>
