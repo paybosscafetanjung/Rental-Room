@@ -61,7 +61,7 @@
   <style>@view-transition { navigation: auto; }</style>
 </head>
 <body class="min-h-full bg-gray-100">
-  <div id="app" class="min-h-full p-4"></div>
+  <div id="app" class="min-h-full"></div>
 
   <script>
     (function() {
@@ -772,31 +772,64 @@
       }
 
       return `
-        <div class="min-h-full flex items-center justify-center p-4" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
-          <div class="w-full max-w-md p-8 rounded-2xl shadow-2xl slide-in" style="background-color: ${config.surface_color};">
-            <div class="text-center mb-8">
-              <h1 class="text-3xl font-bold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 2}px;">${config.app_title}</h1>
-              <p class="text-lg" style="color: ${config.text_color}; font-size: ${baseSize}px;">Sistem Manajemen Rental</p>
+        <div class="min-h-screen flex w-full" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
+          
+          <!-- SISI KIRI: GAMBAR (Split Screen Vertical/Portrait) -->
+          <!-- Diubah flex-col menjadi flex-row agar gambar berdampingan kiri-kanan -->
+          <div class="hidden lg:flex lg:w-1/2 flex-row relative">
+            
+            <!-- Bagian Kiri: Billiard (Portrait Strip) -->
+            <!-- Diubah h-1/2 menjadi h-full w-1/2 -->
+            <div class="h-full w-1/2 relative overflow-hidden group">
+               <img src="https://i.imgur.com/jR2XAQZ.png" alt="Billiard Area" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
+               <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg text-center transform -rotate-90 whitespace-nowrap" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">BILLIARD</h2>
+               </div>
             </div>
             
-            <form onsubmit="handleLogin(event)" class="space-y-4">
-              <div>
-                <label for="username" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Username</label>
-                <input type="text" id="username" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-              </div>
-              
-              <div>
-                <label for="password" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Password</label>
-                <input type="password" id="password" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-              </div>
-              
-              <div id="login-error" class="hidden text-red-600 text-center font-semibold" style="font-size: ${baseSize * 0.9}px;"></div>
-              
-              <button type="submit" class="w-full py-3 rounded-lg text-white font-bold text-lg transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
-                🔐 Login
-              </button>
-            </form>
+            <!-- Bagian Kanan: Karaoke (Portrait Strip) -->
+            <!-- Diubah h-1/2 menjadi h-full w-1/2 -->
+            <div class="h-full w-1/2 relative overflow-hidden group">
+               <img src="https://i.imgur.com/HiF3Ln2.png" alt="Karaoke Room" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
+               <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
+                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg text-center transform rotate-90 whitespace-nowrap" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">KARAOKE VIP</h2>
+               </div>
+            </div>
           </div>
+
+          <!-- SISI KANAN: FORM LOGIN -->
+          <div class="w-full lg:w-1/2 flex items-center justify-center p-8 relative">
+             <!-- Form Container -->
+             <div class="w-full max-w-md p-8 rounded-2xl shadow-xl slide-in" style="background-color: ${config.surface_color};">
+                <div class="text-center mb-8">
+                  <h1 class="text-3xl font-bold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 2}px;">${config.app_title}</h1>
+                  <p class="text-lg" style="color: ${config.text_color}; font-size: ${baseSize}px;">Login Staff</p>
+                </div>
+                
+                <form onsubmit="handleLogin(event)" class="space-y-4">
+                  <div>
+                    <label for="username" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Username</label>
+                    <input type="text" id="username" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                  </div>
+                  
+                  <div>
+                    <label for="password" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Password</label>
+                    <input type="password" id="password" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                  </div>
+                  
+                  <div id="login-error" class="hidden text-red-600 text-center font-semibold" style="font-size: ${baseSize * 0.9}px;"></div>
+                  
+                  <button type="submit" class="w-full py-3 rounded-lg text-white font-bold text-lg transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
+                    🔐 Masuk Aplikasi
+                  </button>
+                </form>
+             </div>
+             
+             <div class="absolute bottom-4 text-sm opacity-50" style="color: ${config.text_color}">
+                &copy; 2025 Pay Boss Entertainment System
+             </div>
+          </div>
+
         </div>
       `;
     }
@@ -1049,6 +1082,23 @@
               <button onclick="handleLogout()" class="px-6 py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                 🚪 Logout
               </button>
+            </div>
+            
+            <!-- BANNER PROMOSI (BARU) -->
+            <div class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="relative h-48 rounded-xl overflow-hidden shadow-lg group">
+                   <img src="https://i.imgur.com/jR2XAQZ.png" alt="Billiard" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
+                   <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 flex items-end p-4">
+                      <h3 class="text-2xl font-bold text-white tracking-wider">BILLIARD AREA</h3>
+                   </div>
+                </div>
+                
+                <div class="relative h-48 rounded-xl overflow-hidden shadow-lg group">
+                   <img src="https://i.imgur.com/HiF3Ln2.png" alt="Karaoke" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
+                   <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 flex items-end p-4">
+                      <h3 class="text-2xl font-bold text-white tracking-wider">KARAOKE VIP</h3>
+                   </div>
+                </div>
             </div>
             
             ${salesAnalysisSection}
