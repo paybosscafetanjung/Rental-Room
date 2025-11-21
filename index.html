@@ -761,7 +761,7 @@
       };
     }
 
-    function renderLogin() {
+function renderLogin() {
       const config = window.elementSdk?.config || defaultConfig;
       const customFont = config.font_family || defaultConfig.font_family;
       const baseFontStack = 'system-ui, -apple-system, sans-serif';
@@ -774,25 +774,25 @@
       return `
         <div class="min-h-screen flex w-full" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
           
-          <!-- SISI KIRI: GAMBAR (Split Screen Vertical/Portrait) -->
-          <!-- Diubah flex-col menjadi flex-row agar gambar berdampingan kiri-kanan -->
-          <div class="hidden lg:flex lg:w-1/2 flex-row relative">
+          <!-- SISI KIRI: GAMBAR (Mode Landscape / Atas-Bawah) -->
+          <!-- 'flex-col' membuat susunan jadi vertikal -->
+          <div class="hidden lg:flex lg:w-1/2 flex-col relative">
             
-            <!-- Bagian Kiri: Billiard (Portrait Strip) -->
-            <!-- Diubah h-1/2 menjadi h-full w-1/2 -->
-            <div class="h-full w-1/2 relative overflow-hidden group">
+            <!-- Bagian Atas: Billiard -->
+            <!-- 'h-1/2' membuat tinggi jadi 50% layar -->
+            <div class="h-1/2 w-full relative overflow-hidden group">
                <img src="https://i.imgur.com/GtlM9wP.png" alt="Billiard Area" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
                <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg text-center transform -rotate-90 whitespace-nowrap" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">BILLIARD</h2>
+                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">BILLIARD</h2>
                </div>
             </div>
             
-            <!-- Bagian Kanan: Karaoke (Portrait Strip) -->
-            <!-- Diubah h-1/2 menjadi h-full w-1/2 -->
-            <div class="h-full w-1/2 relative overflow-hidden group">
+            <!-- Bagian Bawah: Karaoke -->
+            <!-- 'h-1/2' membuat tinggi jadi 50% layar -->
+            <div class="h-1/2 w-full relative overflow-hidden group">
                <img src="https://i.imgur.com/tUMpgTV.png" alt="Karaoke Room" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
                <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg text-center transform rotate-90 whitespace-nowrap" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">KARAOKE VIP</h2>
+                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">KARAOKE VIP</h2>
                </div>
             </div>
           </div>
