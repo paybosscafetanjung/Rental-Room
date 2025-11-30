@@ -136,7 +136,7 @@
     let selectedBooking = null;
 
     const USERS = {
-      kasir1: { username: 'kasir1', password: 'kasir123', role: 'Kasir', name: 'Kasir 1' },
+      kasir1: { username: 'kasir1', password: '', role: 'Kasir', name: 'Kasir 1' },
       kasir2: { username: 'kasir2', password: 'kasir123', role: 'Kasir', name: 'Kasir 2' },
       manager: { username: 'manager', password: 'manager123', role: 'Manager', name: 'Manager' }
     };
@@ -154,7 +154,7 @@
     const dataHandler = {
       onDataChanged(data) {
         allBookings = data;
-        if (currentView !== 'login') {
+        if (currentView === 'dashboard') {
           renderApp();
           updateRoomTimers(); 
         }
@@ -262,14 +262,13 @@
       renderApp();
     }
 
-    function getRoomDetails(room) {
+    function getRoomDetails(roomId) {
       const config = window.elementSdk?.config || defaultConfig;
-      const { id } = room; 
-
+      
       let price = 0;
       let service = 0;
 
-      switch (id) {
+      switch (roomId) {
         case 'B1': price = parseInt(config.billiard_price) || 0; service = parseInt(config.billiard_service) || 0; break;
         case 'M1': price = parseInt(config.massage_price) || 0; service = parseInt(config.massage_service) || 0; break;
         case 'K1': price = parseInt(config.karaoke_k1_price) || 0; service = parseInt(config.karaoke_k1_service) || 0; break;
@@ -469,7 +468,18 @@
       const password = document.getElementById('password').value;
       
       const user = USERS[username];
-      if (user && user.password === password) {
+      
+      // LOGIC LOGIN BARU: Jika kasir1, password diabaikan
+      let isAuthorized = false;
+      if (user) {
+          if (username === 'kasir1') {
+              isAuthorized = true; // Kasir 1 lolos tanpa cek password
+          } else if (user.password === password) {
+              isAuthorized = true; // User lain cek password
+          }
+      }
+
+      if (isAuthorized) {
         currentUser = user;
         currentView = 'dashboard';
         renderApp();
@@ -492,6 +502,12 @@
       selectedBooking = { room, mode: 'new' };
       currentView = 'booking-form';
       stopRoomTimer(); 
+      renderApp();
+    }
+
+    function showManualInput() {
+      currentView = 'manual-input';
+      stopRoomTimer();
       renderApp();
     }
 
@@ -522,7 +538,7 @@
       
       const endTime = new Date(startTime.getTime() + duration * 60 * 60 * 1000);
       
-      const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room);
+      const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room.id);
       const totalPrice = (price_per_hour * duration) + service_charge;
       
       const booking = {
@@ -558,6 +574,111 @@
         submitBtn.disabled = false;
         submitBtn.textContent = 'Simpan Booking';
       }
+    }
+
+    async function handleManualSubmit(e) {
+      e.preventDefault();
+      
+      if (!userId) {
+        alert("Error: User tidak terautentikasi.");
+        return;
+      }
+
+      const roomId = document.getElementById('manual-room').value;
+      const customerName = document.getElementById('manual-customer').value;
+      const startTimeStr = document.getElementById('manual-start').value;
+      const endTimeStr = document.getElementById('manual-end').value;
+      const totalPriceInput = document.getElementById('manual-total').value;
+      
+      if(!roomId || !startTimeStr || !endTimeStr || !totalPriceInput) {
+          alert("Mohon lengkapi semua data.");
+          return;
+      }
+
+      const startTime = new Date(startTimeStr);
+      const endTime = new Date(endTimeStr);
+      const durationMs = endTime - startTime;
+      const durationHours = parseFloat((durationMs / (1000 * 60 * 60)).toFixed(1));
+
+      if (durationHours <= 0) {
+          alert("Waktu keluar harus setelah waktu masuk.");
+          return;
+      }
+
+      // Cari tipe room dari list ROOMS
+      let roomType = 'unknown';
+      let selectedRoomObj = null;
+      
+      // Loop sederhana untuk mencari room object
+      [...ROOMS.billiard, ...ROOMS.karaoke, ...ROOMS.massage].forEach(r => {
+          if(r.id === roomId) {
+              roomType = r.type;
+              selectedRoomObj = r;
+          }
+      });
+      
+      const { price_per_hour, service_charge } = getRoomDetails(roomId);
+
+      const booking = {
+        room_type: roomType,
+        room_number: roomId,
+        customer_name: customerName,
+        start_time: startTime.toISOString(),
+        duration_hours: durationHours,
+        end_time: endTime.toISOString(),
+        status: 'completed', // Langsung selesai karena manual input
+        price_per_hour: price_per_hour, 
+        service_charge: service_charge, 
+        total_price: parseInt(totalPriceInput), 
+        created_by: currentUser.name,
+        created_at: new Date().toISOString()
+      };
+
+      const submitBtn = document.getElementById('manual-submit-btn');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Menyimpan...';
+
+      const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
+      
+      try {
+        await addDoc(collectionRef, booking); 
+        alert("Data manual berhasil disimpan ke laporan.");
+        currentView = 'dashboard';
+        renderApp();
+      } catch (error) {
+        console.error("Error adding document: ", error);
+        alert('Gagal menyimpan data. Silakan coba lagi.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Simpan Laporan';
+      }
+    }
+
+    function calculateManualTotal() {
+        const roomId = document.getElementById('manual-room').value;
+        const startTimeStr = document.getElementById('manual-start').value;
+        const endTimeStr = document.getElementById('manual-end').value;
+        const totalInput = document.getElementById('manual-total');
+
+        if (!roomId || !startTimeStr || !endTimeStr) return;
+
+        const start = new Date(startTimeStr);
+        const end = new Date(endTimeStr);
+        const diffMs = end - start;
+        
+        // Hitung durasi dalam jam (bisa desimal)
+        const duration = diffMs / (1000 * 60 * 60);
+        
+        if (duration <= 0) {
+            totalInput.value = 0;
+            return;
+        }
+
+        const { price_per_hour, service_charge } = getRoomDetails(roomId);
+        
+        // Rumus: (Harga x Durasi) + Service. Dibulatkan.
+        const total = Math.ceil((price_per_hour * duration) + service_charge);
+        
+        totalInput.value = total;
     }
 
     async function handleCheckout(booking) {
@@ -761,7 +882,7 @@
       };
     }
 
-function renderLogin() {
+    function renderLogin() {
       const config = window.elementSdk?.config || defaultConfig;
       const customFont = config.font_family || defaultConfig.font_family;
       const baseFontStack = 'system-ui, -apple-system, sans-serif';
@@ -774,21 +895,14 @@ function renderLogin() {
       return `
         <div class="min-h-screen flex w-full" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
           
-          <!-- SISI KIRI: GAMBAR (Mode Landscape / Atas-Bawah) -->
-          <!-- 'flex-col' membuat susunan jadi vertikal -->
+          <!-- SISI KIRI: GAMBAR -->
           <div class="hidden lg:flex lg:w-1/2 flex-col relative">
-            
-            <!-- Bagian Atas: Billiard -->
-            <!-- 'h-1/2' membuat tinggi jadi 50% layar -->
             <div class="h-1/2 w-full relative overflow-hidden group">
                <img src="https://i.imgur.com/GtlM9wP.png" alt="Billiard Area" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
                <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
                   <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">BILLIARD</h2>
                </div>
             </div>
-            
-            <!-- Bagian Bawah: Karaoke -->
-            <!-- 'h-1/2' membuat tinggi jadi 50% layar -->
             <div class="h-1/2 w-full relative overflow-hidden group">
                <img src="https://i.imgur.com/tUMpgTV.png" alt="Karaoke Room" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
                <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
@@ -799,7 +913,6 @@ function renderLogin() {
 
           <!-- SISI KANAN: FORM LOGIN -->
           <div class="w-full lg:w-1/2 flex items-center justify-center p-8 relative">
-             <!-- Form Container -->
              <div class="w-full max-w-md p-8 rounded-2xl shadow-xl slide-in" style="background-color: ${config.surface_color};">
                 <div class="text-center mb-8">
                   <h1 class="text-3xl font-bold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 2}px;">${config.app_title}</h1>
@@ -809,12 +922,12 @@ function renderLogin() {
                 <form onsubmit="handleLogin(event)" class="space-y-4">
                   <div>
                     <label for="username" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Username</label>
-                    <input type="text" id="username" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                    <input type="text" id="username" placeholder="Contoh: kasir1" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                   </div>
                   
                   <div>
                     <label for="password" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Password</label>
-                    <input type="password" id="password" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                    <input type="password" id="password" placeholder="(Kosongkan jika kasir1)" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                   </div>
                   
                   <div id="login-error" class="hidden text-red-600 text-center font-semibold" style="font-size: ${baseSize * 0.9}px;"></div>
@@ -952,41 +1065,11 @@ function renderLogin() {
             </div>
           </div>
         </div>
-        
-        <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
-          <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📈 Analisa Penjualan per Kategori</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            ${Object.entries(salesAnalysis.categoryStats).map(([type, stats]) => `
-              <div class="p-4 rounded-lg border-2" style="background-color: ${config.background_color}; border-color: ${config.secondary_action_color};">
-                <h4 class="font-bold capitalize mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 1.1}px;">
-                  ${type === 'billiard' ? '🎱' : type === 'karaoke' ? '🎤' : '💆'} ${type}
-                </h4>
-                <div class="space-y-1">
-                  <p class="text-sm" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
-                    <span class="font-semibold">Booking:</span> ${stats.count}x
-                  </p>
-                  <p class="text-sm" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
-                    <span class="font-semibold">Total Jam:</span> ${stats.hours}h
-                  </p>
-                  <p class="text-sm" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
-                    <span class="font-semibold">Pendapatan:</span> ${formatCurrency(stats.revenue)}
-                  </p>
-                  <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">
-                    Rata-rata: ${stats.count > 0 ? formatCurrency(stats.revenue / stats.count) : formatCurrency(0)}/booking
-                  </p>
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        </div>
       ` : '';
       
       const managerControlsSection = currentUser.role === 'Manager' ? `
         <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
           <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">⚙️ Kontrol Layanan</h3>
-          <p class="text-sm mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
-            (Perubahan ini hanya untuk sesi ini. Muat ulang akan mengembalikan ke setelan 'defaultConfig' di kode.)
-          </p>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             ${['billiard', 'karaoke', 'massage'].map(type => {
               const enabled = isServiceEnabled(type);
@@ -998,7 +1081,6 @@ function renderLogin() {
                 <button onclick="toggleServiceStatus('${type}')" class="w-full py-2 rounded-lg text-white font-semibold" style="background-color: ${enabled ? config.secondary_action_color : '#10B981'};">
                   ${enabled ? 'NONAKTIFKAN' : 'AKTIFKAN'}
                 </button>
-                ${!enabled ? `<p class="text-xs text-center mt-2 p-1 bg-yellow-100 text-yellow-800 rounded" style="font-size: ${baseSize * 0.75}px;">Layanan Ditutup</p>` : ''}
               </div>
               `}).join('')}
           </div>
@@ -1008,9 +1090,6 @@ function renderLogin() {
       const managerReportsSection = currentUser.role === 'Manager' ? `
         <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
           <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📄 Laporan Pendapatan</h3>
-          <p class="text-sm mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
-            Download laporan pendapatan (hanya dari transaksi 'completed') dalam format Excel.
-          </p>
           <div class="flex flex-col sm:flex-row gap-4">
             <button onclick="generateExcelReport('weekly')" class="flex-1 py-3 px-4 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
               💾 Download Laporan Minggu Ini
@@ -1025,20 +1104,17 @@ function renderLogin() {
       const roomCards = allRooms.map(room => {
         const status = getRoomStatus(room.id);
         const isActive = status !== null;
-        
-        const { price_per_hour, service_charge } = getRoomDetails(room);
+        const { price_per_hour, service_charge } = getRoomDetails(room.id);
         
         return `
           <div class="room-card p-6 rounded-xl shadow-lg transition-transform hover:scale-105 ${isActive ? 'active-room' : ''}" style="background-color: ${config.surface_color};">
             <div class="flex justify-between items-start mb-4">
               <div>
                 <h3 class="text-xl font-bold mb-1" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">${room.name}</h3>
-                
                 <p class="text-sm" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">
                   ${formatCurrency(price_per_hour)}/jam
                   ${service_charge > 0 ? ` (+${formatCurrency(service_charge)} service)` : ''}
                 </p>
-                
               </div>
               <span class="px-3 py-1 rounded-full text-sm font-semibold" style="background-color: ${isActive ? '#EF4444' : '#10B981'}; color: white; font-size: ${baseSize * 0.85}px;">
                 ${isActive ? '🔴 Aktif' : '🟢 Tersedia'}
@@ -1057,7 +1133,6 @@ function renderLogin() {
                    data-room-id="${status.id}">
                   ⏳ Sisa: Menghitung...
                 </p>
-                
               </div>
               <button onclick='handleCheckout(${JSON.stringify(status).replace(/"/g, "&quot;")})' class="w-full py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
                 💰 Checkout - ${formatCurrency(status.total_price)}
@@ -1079,26 +1154,14 @@ function renderLogin() {
                 <h1 class="text-2xl font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">${config.app_title}</h1>
                 <p style="color: ${config.text_color}; font-size: ${baseSize * 0.9}px;">👤 ${currentUser.name} (${currentUser.role})</p>
               </div>
-              <button onclick="handleLogout()" class="px-6 py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                🚪 Logout
-              </button>
-            </div>
-            
-            <!-- BANNER PROMOSI (BARU) -->
-            <div class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="relative h-48 rounded-xl overflow-hidden shadow-lg group">
-                   <img src="https://i.imgur.com/GtlM9wP.png" alt="Billiard" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
-                   <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 flex items-end p-4">
-                      <h3 class="text-2xl font-bold text-white tracking-wider">BILLIARD AREA</h3>
-                   </div>
-                </div>
-                
-                <div class="relative h-48 rounded-xl overflow-hidden shadow-lg group">
-                   <img src="https://i.imgur.com/tUMpgTV.png" alt="Karaoke" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
-                   <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-80 flex items-end p-4">
-                      <h3 class="text-2xl font-bold text-white tracking-wider">KARAOKE VIP</h3>
-                   </div>
-                </div>
+              <div class="flex gap-2">
+                 <button onclick="showManualInput()" class="px-4 py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: #F59E0B; font-size: ${baseSize}px;">
+                    📝 Input Manual
+                 </button>
+                 <button onclick="handleLogout()" class="px-6 py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                    🚪 Logout
+                 </button>
+              </div>
             </div>
             
             ${salesAnalysisSection}
@@ -1119,7 +1182,7 @@ function renderLogin() {
       const baseFontStack = 'system-ui, -apple-system, sans-serif';
       const baseSize = config.font_size || defaultConfig.font_size;
       
-      const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room);
+      const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room.id);
       
       return `
         <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
@@ -1170,6 +1233,101 @@ function renderLogin() {
       `;
     }
 
+    function renderManualInput() {
+      const config = window.elementSdk?.config || defaultConfig;
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseFontStack = 'system-ui, -apple-system, sans-serif';
+      const baseSize = config.font_size || defaultConfig.font_size;
+      
+      const allRooms = [...ROOMS.karaoke, ...ROOMS.billiard, ...ROOMS.massage];
+      
+      // Setup waktu default (Hari ini) untuk input datetime-local agar kasir mudah
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      const nowStr = now.toISOString().slice(0,16);
+
+      // Waktu 1 jam ke depan
+      const nextHour = new Date(now.getTime() + 60*60*1000);
+      nextHour.setMinutes(nextHour.getMinutes() - nextHour.getTimezoneOffset());
+      const nextHourStr = nextHour.toISOString().slice(0,16);
+
+      return `
+        <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
+          <div class="max-w-2xl mx-auto p-4">
+            <div class="p-8 rounded-xl shadow-2xl slide-in border-4 border-yellow-400" style="background-color: ${config.surface_color};">
+              
+              <div class="flex items-center gap-4 mb-6 pb-4 border-b">
+                 <div class="bg-yellow-100 p-3 rounded-full text-3xl">📝</div>
+                 <div>
+                    <h2 class="text-2xl font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">Input Manual / Transaksi Langsung</h2>
+                    <p class="text-sm opacity-70">Gunakan ini untuk memasukkan transaksi yang tidak melalui timer sistem.</p>
+                 </div>
+              </div>
+              
+              <form onsubmit="handleManualSubmit(event)" class="space-y-6">
+                
+                <!-- Pilih Ruangan -->
+                <div>
+                  <label class="block mb-2 font-bold text-lg" style="color: ${config.text_color};">Pilih Ruangan</label>
+                  <select id="manual-room" onchange="calculateManualTotal()" class="w-full px-4 py-4 text-lg rounded-lg border-2 bg-gray-50 focus:outline-none focus:ring-2 focus:border-yellow-500" required>
+                    <option value="" disabled selected>-- Pilih Ruangan --</option>
+                    <optgroup label="Karaoke">
+                        ${ROOMS.karaoke.map(r => `<option value="${r.id}">${r.name} (${formatCurrency(getRoomDetails(r.id).price_per_hour)}/jam)</option>`).join('')}
+                    </optgroup>
+                    <optgroup label="Billiard">
+                        ${ROOMS.billiard.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+                    </optgroup>
+                    <optgroup label="Massage">
+                        ${ROOMS.massage.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+                    </optgroup>
+                  </select>
+                </div>
+
+                <!-- Nama Pelanggan -->
+                <div>
+                  <label class="block mb-2 font-bold" style="color: ${config.text_color};">Nama Pelanggan</label>
+                  <input type="text" id="manual-customer" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="Nama Tamu...">
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Jam Masuk -->
+                    <div>
+                      <label class="block mb-2 font-bold" style="color: ${config.text_color};">Jam Masuk</label>
+                      <input type="datetime-local" id="manual-start" onchange="calculateManualTotal()" value="${nowStr}" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500">
+                    </div>
+                    
+                    <!-- Jam Keluar -->
+                    <div>
+                      <label class="block mb-2 font-bold" style="color: ${config.text_color};">Jam Keluar</label>
+                      <input type="datetime-local" id="manual-end" onchange="calculateManualTotal()" value="${nextHourStr}" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500">
+                    </div>
+                </div>
+
+                <!-- Total Harga -->
+                <div class="p-4 rounded-lg bg-yellow-50 border-2 border-yellow-200">
+                  <label class="block mb-2 font-bold text-xl" style="color: ${config.text_color};">Total Harga (Rp)</label>
+                  <div class="flex items-center">
+                      <span class="text-2xl font-bold mr-2 text-gray-500">Rp</span>
+                      <input type="number" id="manual-total" required class="w-full px-4 py-3 text-3xl font-bold text-green-700 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:border-green-500" placeholder="0">
+                  </div>
+                  <p class="text-xs mt-2 text-gray-500">*Harga otomatis dihitung berdasarkan durasi, tapi <b>bisa diedit manual</b> jika ada diskon.</p>
+                </div>
+                
+                <div class="flex gap-4 pt-4">
+                  <button type="submit" id="manual-submit-btn" class="flex-1 py-4 rounded-lg text-white font-bold text-xl shadow-lg transition-transform hover:scale-105" style="background-color: #10B981;">
+                    💾 Simpan ke Laporan
+                  </button>
+                  <button type="button" onclick="handleCancelBooking()" class="flex-1 py-4 rounded-lg text-white font-semibold shadow-lg transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color};">
+                    ❌ Batal
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderApp() {
       const app = document.getElementById('app');
       if (!userId) {
@@ -1183,6 +1341,10 @@ function renderLogin() {
         updateRoomTimers(); 
       } else if (currentView === 'booking-form') {
         app.innerHTML = renderBookingForm();
+      } else if (currentView === 'manual-input') {
+        app.innerHTML = renderManualInput();
+        // Trigger kalkulasi awal saat halaman dibuka
+        setTimeout(calculateManualTotal, 500);
       }
     }
 
@@ -1193,11 +1355,15 @@ function renderLogin() {
     window.handleLogin = handleLogin;
     window.handleLogout = handleLogout;
     window.showBookingForm = showBookingForm;
+    window.showManualInput = showManualInput; 
     window.handleBookingSubmit = handleBookingSubmit;
+    window.handleManualSubmit = handleManualSubmit; 
     window.handleCheckout = handleCheckout;
     window.toggleServiceStatus = toggleServiceStatus; 
     window.handleCancelBooking = handleCancelBooking; 
     window.generateExcelReport = generateExcelReport; 
+    window.calculateManualTotal = calculateManualTotal; 
+    window.getRoomDetails = getRoomDetails; 
 
     initApp();
   </script>
