@@ -13,33 +13,30 @@
       box-sizing: border-box;
     }
     
-    /* Animasi standar untuk room aktif */
     @keyframes pulse-glow-blue {
-      0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); } /* Biru */
+      0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); }
       50% { box-shadow: 0 0 30px rgba(59, 130, 246, 0.8); }
     }
     
-    /* Animasi BARU untuk room yang waktunya habis */
     @keyframes pulse-glow-red {
       0%, 100% { 
-        box-shadow: 0 0 20px rgba(239, 68, 68, 0.6); /* Merah */
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
         border-color: rgba(239, 68, 68, 0.8);
       }
       50% { 
-        box-shadow: 0 0 35px rgba(239, 68, 68, 1); /* Merah Terang */
+        box-shadow: 0 0 35px rgba(239, 68, 68, 1);
         border-color: rgba(239, 68, 68, 1);
       }
     }
     
     .active-room {
-      animation: pulse-glow-blue 2s infinite; /* Menggunakan animasi biru */
+      animation: pulse-glow-blue 2s infinite;
       border: 2px solid transparent;
     }
 
-    /* Class BARU untuk notifikasi waktu habis */
     .expired-room {
-      animation: pulse-glow-red 1s infinite; /* Menggunakan animasi merah, lebih cepat */
-      border: 2px solid #EF4444; /* Border merah */
+      animation: pulse-glow-red 1s infinite;
+      border: 2px solid #EF4444;
     }
     
     @keyframes slideIn {
@@ -51,7 +48,22 @@
       animation: slideIn 0.3s ease-out;
     }
     
-    /* CSS Print bawaan browser tetap disimpan sebagai cadangan */
+    @keyframes bell-shake {
+      0% { transform: rotate(0); }
+      15% { transform: rotate(5deg); }
+      30% { transform: rotate(-5deg); }
+      45% { transform: rotate(4deg); }
+      60% { transform: rotate(-4deg); }
+      75% { transform: rotate(2deg); }
+      85% { transform: rotate(-2deg); }
+      100% { transform: rotate(0); }
+    }
+
+    .bell-active {
+      animation: bell-shake 2s infinite;
+      color: #EF4444; 
+    }
+
     @media print {
       body * { visibility: hidden; }
       #receipt-print, #receipt-print * { visibility: visible; }
@@ -98,8 +110,9 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, addDoc, updateDoc, onSnapshot, collection, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, doc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+    // 1. CONSTANTS & CONFIG
     const defaultConfig = {
       app_title: "One Stop Entertainment Pay Boss",
       billiard_enabled: "false", 
@@ -123,17 +136,6 @@
       font_family: "Inter",
       font_size: 16
     };
-    
-    let db, auth, app, userId, appId;
-    let unsubscribeBookings = null; 
-    let roomTimerInterval = null; 
-    let audioCtx = null; 
-    let playedSounds = {}; 
-
-    let currentUser = null; 
-    let allBookings = []; 
-    let currentView = 'login';
-    let selectedBooking = null;
 
     const USERS = {
       kasir1: { username: 'kasir1', password: '', role: 'Kasir', name: 'Kasir 1' },
@@ -150,270 +152,50 @@
       ],
       massage: [{ id: 'M1', name: 'KursI Pijat 1', type: 'massage' }]
     };
+    
+    // 2. GLOBAL VARIABLES
+    let db, auth, app, userId, appId;
+    let unsubscribeBookings = null; 
+    let unsubscribeNotifications = null;
+    let roomTimerInterval = null; 
+    let audioCtx = null; 
+    let playedSounds = {}; 
 
-    const dataHandler = {
-      onDataChanged(data) {
-        allBookings = data;
-        if (currentView === 'dashboard') {
-          renderApp();
-          updateRoomTimers(); 
-        }
-      }
-    };
+    let currentUser = null; 
+    let allBookings = []; 
+    let notifications = []; 
+    let currentView = 'login';
+    let selectedBooking = null;
 
-    async function initializeFirebaseAndAuth() {
-      const firebaseConfig = {
-        apiKey: "AIzaSyCom-U-BP75_6j_9dwCXdA0VD1vmfCopOg",
-        authDomain: "paybossmanager.firebaseapp.com",
-        projectId: "paybossmanager",
-        storageBucket: "paybossmanager.firebasestorage.app",
-        messagingSenderId: "627431696008",
-        appId: "1:627431696008:web:56137065fbd9aee32b613d"
-      };
-      appId = firebaseConfig.projectId || 'default-app-id';
+    // 3. CORE FUNCTION DEFINITIONS
+    
+    function renderApp() {
+      const appDiv = document.getElementById('app');
+      if (!appDiv) return;
 
-      if (!firebaseConfig.apiKey) {
-        console.error("Firebase config missing!");
+      if (!userId) {
+        appDiv.innerHTML = renderLogin(); 
         return;
       }
-
-      app = initializeApp(firebaseConfig);
-      db = getFirestore(app);
-      auth = getAuth(app);
-      setLogLevel('Debug'); 
-
-      onAuthStateChanged(auth, (user) => {
-        if (user) {
-          userId = user.uid;
-          loadBookings();
-        } else {
-          userId = null;
-          if (unsubscribeBookings) {
-            unsubscribeBookings(); 
-            unsubscribeBookings = null;
-          }
-          stopRoomTimer(); 
-          renderApp(); 
-        }
-      });
-
-      try {
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error("Firebase sign-in failed:", error);
+      if (currentView === 'login') {
+        appDiv.innerHTML = renderLogin();
+      } else if (currentView === 'dashboard') {
+        appDiv.innerHTML = renderDashboard();
+        updateRoomTimers(); 
+      } else if (currentView === 'booking-form') {
+        appDiv.innerHTML = renderBookingForm();
+      } else if (currentView === 'manual-input') {
+        appDiv.innerHTML = renderManualInput();
+        setTimeout(calculateManualTotal, 500);
+      } else if (currentView === 'transaction-manager') {
+        appDiv.innerHTML = renderTransactionManager();
       }
     }
-    
-    function loadBookings() {
-      if (!userId) return; 
-      
-      if (unsubscribeBookings) {
-        unsubscribeBookings();
-      }
 
-      const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
-      
-      unsubscribeBookings = onSnapshot(collectionRef, (snapshot) => {
-        const bookingsData = snapshot.docs.map(doc => ({
-          id: doc.id, 
-          ...doc.data()
-        }));
-        dataHandler.onDataChanged(bookingsData);
-      }, (error) => {
-        console.error("Error listening to Firestore:", error);
-      });
-    }
-
-    async function initApp() {
-      await initializeFirebaseAndAuth();
-
-      window.elementSdk.init({
-        defaultConfig,
-        onConfigChange,
-        mapToCapabilities: (config) => ({
-          recolorables: [
-            { get: () => config.background_color, set: (v) => { config.background_color = v; window.elementSdk.setConfig({background_color: v}); }},
-            { get: () => config.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({surface_color: v}); }},
-            { get: () => config.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({text_color: v}); }},
-            { get: () => config.primary_action_color, set: (v) => { config.primary_action_color = v; window.elementSdk.setConfig({primary_action_color: v}); }},
-            { get: () => config.secondary_action_color, set: (v) => { config.secondary_action_color = v; window.elementSdk.setConfig({secondary_action_color: v}); }}
-          ],
-          fontEditable: { get: () => config.font_family, set: (v) => { config.font_family = v; window.elementSdk.setConfig({font_family: v}); }},
-          fontSizeable: { get: () => config.font_size, set: (v) => { config.font_size = v; window.elementSdk.setConfig({font_size: v}); }}
-        }),
-        mapToEditPanelValues: (config) => new Map([
-          ["app_title", config.app_title],
-          ["billiard_enabled", config.billiard_enabled !== "false"],
-          ["karaoke_enabled", config.karaoke_enabled !== "false"],
-          ["massage_enabled", config.massage_enabled !== "false"],
-          ["billiard_price", config.billiard_price],
-          ["billiard_service", config.billiard_service],
-          ["massage_price", config.massage_price],
-          ["massage_service", config.massage_service],
-          ["karaoke_k1_price", config.karaoke_k1_price],
-          ["karaoke_k1_service", config.karaoke_k1_service],
-          ["karaoke_k2_price", config.karaoke_k2_price],
-          ["karaoke_k2_service", config.karaoke_k2_service],
-          ["karaoke_k3_price", config.karaoke_k3_price],
-          ["karaoke_k3_service", config.karaoke_k3_service]
-        ])
-      });
-      
+    async function onConfigChange(config) {
       renderApp();
     }
 
-    function getRoomDetails(roomId) {
-      const config = window.elementSdk?.config || defaultConfig;
-      
-      let price = 0;
-      let service = 0;
-
-      switch (roomId) {
-        case 'B1': price = parseInt(config.billiard_price) || 0; service = parseInt(config.billiard_service) || 0; break;
-        case 'M1': price = parseInt(config.massage_price) || 0; service = parseInt(config.massage_service) || 0; break;
-        case 'K1': price = parseInt(config.karaoke_k1_price) || 0; service = parseInt(config.karaoke_k1_service) || 0; break;
-        case 'K2': price = parseInt(config.karaoke_k2_price) || 0; service = parseInt(config.karaoke_k2_service) || 0; break;
-        case 'K3': price = parseInt(config.karaoke_k3_price) || 0; service = parseInt(config.karaoke_k3_service) || 0; break;
-        default: price = 0; service = 0;
-      }
-      return { price_per_hour: price, service_charge: service };
-    }
-    
-    function isServiceEnabled(roomType) {
-      const config = window.elementSdk?.config || defaultConfig;
-      if (roomType === 'billiard') return config.billiard_enabled !== "false";
-      if (roomType === 'karaoke') return config.karaoke_enabled !== "false";
-      if (roomType === 'massage') return config.massage_enabled !== "false";
-      return false;
-    }
-    
-    function toggleServiceStatus(serviceType) {
-      const config = window.elementSdk?.config || defaultConfig;
-      const key = `${serviceType}_enabled`;
-      const currentValue = config[key] !== "false";
-      const newValue = !currentValue;
-      window.elementSdk.setConfig({ [key]: newValue.toString() });
-    }
-
-    function formatCurrency(amount) {
-      return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
-    }
-
-    function formatTime(isoString) {
-      const date = new Date(isoString);
-      return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    }
-
-    function formatDate(isoString) {
-      const date = new Date(isoString);
-      return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    }
-
-    function isDateInThisWeek(date) {
-      const today = new Date();
-      const firstDayOfWeek = new Date(today);
-      const day = today.getDay(); 
-      const diff = today.getDate() - day + (day === 0 ? -6 : 1); 
-      firstDayOfWeek.setDate(diff);
-      firstDayOfWeek.setHours(0, 0, 0, 0);
-
-      const lastDayOfWeek = new Date(firstDayOfWeek);
-      lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
-      lastDayOfWeek.setHours(23, 59, 59, 999);
-
-      return date >= firstDayOfWeek && date <= lastDayOfWeek;
-    }
-
-    function isDateInThisMonth(date) {
-      const today = new Date();
-      return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
-    }
-    
-    function generateExcelReport(reportType) {
-      const completedBookings = allBookings.filter(b => 
-        b.status === 'completed' && b.created_at
-      );
-
-      let filteredBookings;
-      let fileName = "Laporan_Pendapatan.xlsx";
-
-      if (reportType === 'weekly') {
-        filteredBookings = completedBookings.filter(b => isDateInThisWeek(new Date(b.created_at)));
-        fileName = `Laporan_Mingguan_${formatDate(new Date()).replace(/\//g, '-')}.xlsx`;
-      } else if (reportType === 'monthly') {
-        filteredBookings = completedBookings.filter(b => isDateInThisMonth(new Date(b.created_at)));
-        fileName = `Laporan_Bulanan_${new Date().getMonth() + 1}_${new Date().getFullYear()}.xlsx`;
-      } else {
-        return;
-      }
-
-      if (filteredBookings.length === 0) {
-        alert("Tidak ada data pendapatan yang selesai (completed) untuk periode ini.");
-        return;
-      }
-
-      const dataForExcel = filteredBookings.map(b => ({
-        "Tanggal": formatDate(b.created_at),
-        "Waktu": formatTime(b.created_at),
-        "Kasir": b.created_by,
-        "Pelanggan": b.customer_name,
-        "Ruangan": `${b.room_number} (${b.room_type})`,
-        "Durasi (Jam)": b.duration_hours,
-        "Biaya Sewa": (b.price_per_hour * b.duration_hours),
-        "Biaya Service": b.service_charge,
-        "Total Pendapatan": b.total_price
-      }));
-
-      const totalRevenue = dataForExcel.reduce((sum, row) => sum + row["Total Pendapatan"], 0);
-      const ws = XLSX.utils.json_to_sheet(dataForExcel);
-      
-      XLSX.utils.sheet_add_aoa(ws, [
-        [], 
-        ["", "", "", "", "", "", "", "GRAND TOTAL", totalRevenue]
-      ], { origin: -1 }); 
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Pendapatan");
-      XLSX.writeFile(wb, fileName);
-    }
-    
-    function playNotificationSound() {
-      if (!audioCtx) {
-        try {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        } catch (e) {
-          console.error("AudioContext tidak didukung.", e);
-          return;
-        }
-      }
-
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.type = 'sine'; 
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
-      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime); 
-
-      oscillator.start(audioCtx.currentTime);
-      oscillator.stop(audioCtx.currentTime + 0.3); 
-    }
-    
-    function startRoomTimer() {
-      stopRoomTimer();
-      roomTimerInterval = setInterval(updateRoomTimers, 1000);
-      playedSounds = {}; 
-    }
-
-    function stopRoomTimer() {
-      if (roomTimerInterval) {
-        clearInterval(roomTimerInterval);
-        roomTimerInterval = null;
-      }
-    }
-    
     function updateRoomTimers() {
       const timerDisplays = document.querySelectorAll('.room-timer-display');
       if (timerDisplays.length === 0) return; 
@@ -455,12 +237,319 @@
       });
     }
 
+    function startRoomTimer() {
+      stopRoomTimer();
+      roomTimerInterval = setInterval(updateRoomTimers, 1000);
+      playedSounds = {}; 
+    }
+
+    function stopRoomTimer() {
+      if (roomTimerInterval) {
+        clearInterval(roomTimerInterval);
+        roomTimerInterval = null;
+      }
+    }
+
+    // 4. DATA HANDLER & INIT LOGIC
+    const dataHandler = {
+      onDataChanged(data) {
+        allBookings = data;
+        if (currentView === 'dashboard' || currentView === 'transaction-manager') {
+          renderApp();
+          if(currentView === 'dashboard') updateRoomTimers(); 
+        }
+      },
+      onNotificationsChanged(data) {
+        notifications = data;
+        if (currentView === 'dashboard' && currentUser && currentUser.role === 'Manager') {
+            renderApp(); // Update bell icon
+        }
+      }
+    };
+
+    async function initializeFirebaseAndAuth() {
+      const firebaseConfig = {
+        apiKey: "AIzaSyCom-U-BP75_6j_9dwCXdA0VD1vmfCopOg",
+        authDomain: "paybossmanager.firebaseapp.com",
+        projectId: "paybossmanager",
+        storageBucket: "paybossmanager.firebasestorage.app",
+        messagingSenderId: "627431696008",
+        appId: "1:627431696008:web:56137065fbd9aee32b613d"
+      };
+      appId = firebaseConfig.projectId || 'default-app-id';
+
+      if (!firebaseConfig.apiKey) {
+        console.error("Firebase config missing!");
+        return;
+      }
+
+      app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+      auth = getAuth(app);
+      setLogLevel('Debug'); 
+
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          userId = user.uid;
+          loadBookings();
+          loadNotifications();
+        } else {
+          userId = null;
+          if (unsubscribeBookings) unsubscribeBookings();
+          if (unsubscribeNotifications) unsubscribeNotifications();
+          stopRoomTimer(); 
+          renderApp(); 
+        }
+      });
+
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Firebase sign-in failed:", error);
+      }
+    }
+    
+    function loadBookings() {
+      if (!userId) return; 
+      if (unsubscribeBookings) unsubscribeBookings();
+
+      const collectionRef = collection(db, 'payboss_bookings', appId, 'all_bookings');
+      
+      unsubscribeBookings = onSnapshot(collectionRef, (snapshot) => {
+        let bookingsData = snapshot.docs.map(doc => ({
+          id: doc.id, 
+          ...doc.data()
+        }));
+        
+        bookingsData.sort((a, b) => {
+            const dateA = new Date(a.created_at || 0);
+            const dateB = new Date(b.created_at || 0);
+            return dateB - dateA;
+        });
+
+        dataHandler.onDataChanged(bookingsData);
+      });
+    }
+
+    function loadNotifications() {
+        if (!userId) return;
+        if (unsubscribeNotifications) unsubscribeNotifications();
+
+        const notifRef = collection(db, 'payboss_notifications', appId, 'alerts');
+        
+        unsubscribeNotifications = onSnapshot(notifRef, (snapshot) => {
+            let notifData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+            
+            notifData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            dataHandler.onNotificationsChanged(notifData);
+        });
+    }
+
+    // 5. HELPER FUNCTIONS
+    function getRoomDetails(roomId) {
+      const config = window.elementSdk?.config || defaultConfig;
+      let price = 0;
+      let service = 0;
+
+      switch (roomId) {
+        case 'B1': price = parseInt(config.billiard_price) || 0; service = parseInt(config.billiard_service) || 0; break;
+        case 'M1': price = parseInt(config.massage_price) || 0; service = parseInt(config.massage_service) || 0; break;
+        case 'K1': price = parseInt(config.karaoke_k1_price) || 0; service = parseInt(config.karaoke_k1_service) || 0; break;
+        case 'K2': price = parseInt(config.karaoke_k2_price) || 0; service = parseInt(config.karaoke_k2_service) || 0; break;
+        case 'K3': price = parseInt(config.karaoke_k3_price) || 0; service = parseInt(config.karaoke_k3_service) || 0; break;
+        default: price = 0; service = 0;
+      }
+      return { price_per_hour: price, service_charge: service };
+    }
+    
+    function isServiceEnabled(roomType) {
+      const config = window.elementSdk?.config || defaultConfig;
+      if (roomType === 'billiard') return config.billiard_enabled !== "false";
+      if (roomType === 'karaoke') return config.karaoke_enabled !== "false";
+      if (roomType === 'massage') return config.massage_enabled !== "false";
+      return false;
+    }
+    
+    function toggleServiceStatus(serviceType) {
+      const config = window.elementSdk?.config || defaultConfig;
+      const key = `${serviceType}_enabled`;
+      const currentValue = config[key] !== "false";
+      const newValue = !currentValue;
+      window.elementSdk.setConfig({ [key]: newValue.toString() });
+    }
+
+    function formatCurrency(amount) {
+      return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+    }
+
+    function formatTime(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+
+    function formatDate(isoString) {
+      const date = new Date(isoString);
+      return date.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    function isDateInThisWeek(date) {
+      const today = new Date();
+      const firstDayOfWeek = new Date(today);
+      const day = today.getDay(); 
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1); 
+      firstDayOfWeek.setDate(diff);
+      firstDayOfWeek.setHours(0, 0, 0, 0);
+
+      const lastDayOfWeek = new Date(firstDayOfWeek);
+      lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+      lastDayOfWeek.setHours(23, 59, 59, 999);
+
+      return date >= firstDayOfWeek && date <= lastDayOfWeek;
+    }
+
+    function isDateInThisMonth(date) {
+      const today = new Date();
+      return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+    }
+    
+    function generateExcelReport(reportType) {
+      const completedBookings = allBookings.filter(b => 
+        (b.status === 'completed' || b.status === 'cancelled') && b.created_at
+      );
+
+      let filteredBookings;
+      let fileName = "Laporan_Pendapatan.xlsx";
+
+      if (reportType === 'weekly') {
+        filteredBookings = completedBookings.filter(b => isDateInThisWeek(new Date(b.created_at)));
+        fileName = `Laporan_Mingguan_${formatDate(new Date()).replace(/\//g, '-')}.xlsx`;
+      } else if (reportType === 'monthly') {
+        filteredBookings = completedBookings.filter(b => isDateInThisMonth(new Date(b.created_at)));
+        fileName = `Laporan_Bulanan_${new Date().getMonth() + 1}_${new Date().getFullYear()}.xlsx`;
+      } else {
+        return;
+      }
+
+      if (filteredBookings.length === 0) {
+        alert("Tidak ada data transaksi untuk periode ini.");
+        return;
+      }
+
+      const dataForExcel = filteredBookings.map(b => ({
+        "Tanggal": formatDate(b.created_at),
+        "Waktu": formatTime(b.created_at),
+        "Kasir": b.created_by,
+        "Pelanggan": b.customer_name,
+        "Ruangan": `${b.room_number} (${b.room_type})`,
+        "Durasi (Jam)": b.duration_hours,
+        "Total Pendapatan": b.total_price,
+        "Status": b.status === 'cancelled' ? `BATAL: ${b.cancel_reason || '-'}` : 'Sukses'
+      }));
+
+      const totalRevenue = dataForExcel.reduce((sum, row) => row["Status"] === 'Sukses' ? sum + row["Total Pendapatan"] : sum, 0);
+      
+      const ws = XLSX.utils.json_to_sheet(dataForExcel);
+      
+      XLSX.utils.sheet_add_aoa(ws, [
+        [], 
+        ["", "", "", "", "", "", "TOTAL BERSIH", totalRevenue]
+      ], { origin: -1 }); 
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Pendapatan");
+      XLSX.writeFile(wb, fileName);
+    }
+    
+    function playNotificationSound() {
+      if (!audioCtx) {
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) {
+          console.error("AudioContext tidak didukung.", e);
+          return;
+        }
+      }
+
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.type = 'sine'; 
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
+      gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime); 
+
+      oscillator.start(audioCtx.currentTime);
+      oscillator.stop(audioCtx.currentTime + 0.3); 
+    }
+    
     function getRoomStatus(roomId) {
       const activeBooking = allBookings.find(b => 
         b.room_number === roomId && b.status === 'active'
       );
       return activeBooking || null;
     }
+    
+    function getDailySalesAnalysis() {
+      const today = new Date();
+      const todayStr = today.toDateString();
+      
+      const todayBookings = allBookings.filter(booking => {
+        const bookingDateStr = booking.created_at || booking.start_time;
+        if (!bookingDateStr) return false;
+        
+        const bookingDate = new Date(bookingDateStr);
+        return bookingDate.toDateString() === todayStr && booking.status === 'completed';
+      });
+      
+      const totalRevenue = todayBookings.reduce((sum, booking) => sum + booking.total_price, 0);
+      
+      const categoryStats = {
+        billiard: { count: 0, revenue: 0, hours: 0 },
+        karaoke: { count: 0, revenue: 0, hours: 0 },
+        massage: { count: 0, revenue: 0, hours: 0 }
+      };
+      
+      todayBookings.forEach(booking => {
+        const category = booking.room_type;
+        if (categoryStats[category]) {
+          categoryStats[category].count++;
+          categoryStats[category].revenue += booking.total_price;
+          categoryStats[category].hours += booking.duration_hours;
+        }
+      });
+      
+      const activeBookings = allBookings.filter(booking => booking.status === 'active');
+      const pendingRevenue = activeBookings.reduce((sum, booking) => sum + booking.total_price, 0);
+      
+      const cashierStats = {};
+      todayBookings.forEach(booking => {
+        if (!booking.created_by) return;
+        if (!cashierStats[booking.created_by]) {
+          cashierStats[booking.created_by] = { count: 0, revenue: 0 };
+        }
+        cashierStats[booking.created_by].count++;
+        cashierStats[booking.created_by].revenue += booking.total_price;
+      });
+      
+      const topCashier = Object.entries(cashierStats).sort((a, b) => b[1].revenue - a[1].revenue)[0];
+      
+      return {
+        totalRevenue,
+        totalBookings: todayBookings.length,
+        categoryStats,
+        activeBookings: activeBookings.length,
+        pendingRevenue,
+        topCashier: topCashier ? { name: topCashier[0], ...topCashier[1] } : null
+      };
+    }
+
+    // 6. ACTION HANDLERS
 
     async function handleLogin(e) {
       e.preventDefault();
@@ -469,13 +558,12 @@
       
       const user = USERS[username];
       
-      // LOGIC LOGIN BARU: Jika kasir1, password diabaikan
       let isAuthorized = false;
       if (user) {
           if (username === 'kasir1') {
-              isAuthorized = true; // Kasir 1 lolos tanpa cek password
+              isAuthorized = true; 
           } else if (user.password === password) {
-              isAuthorized = true; // User lain cek password
+              isAuthorized = true; 
           }
       }
 
@@ -486,8 +574,10 @@
         startRoomTimer(); 
       } else {
         const errorDiv = document.getElementById('login-error');
-        errorDiv.textContent = 'Username atau password salah!';
-        errorDiv.classList.remove('hidden');
+        if(errorDiv) {
+            errorDiv.textContent = 'Username atau password salah!';
+            errorDiv.classList.remove('hidden');
+        }
       }
     }
 
@@ -509,6 +599,12 @@
       currentView = 'manual-input';
       stopRoomTimer();
       renderApp();
+    }
+
+    function showTransactionManager() {
+        currentView = 'transaction-manager';
+        stopRoomTimer();
+        renderApp();
     }
 
     async function handleBookingSubmit(e) {
@@ -605,16 +701,9 @@
           return;
       }
 
-      // Cari tipe room dari list ROOMS
       let roomType = 'unknown';
-      let selectedRoomObj = null;
-      
-      // Loop sederhana untuk mencari room object
       [...ROOMS.billiard, ...ROOMS.karaoke, ...ROOMS.massage].forEach(r => {
-          if(r.id === roomId) {
-              roomType = r.type;
-              selectedRoomObj = r;
-          }
+          if(r.id === roomId) roomType = r.type;
       });
       
       const { price_per_hour, service_charge } = getRoomDetails(roomId);
@@ -626,7 +715,7 @@
         start_time: startTime.toISOString(),
         duration_hours: durationHours,
         end_time: endTime.toISOString(),
-        status: 'completed', // Langsung selesai karena manual input
+        status: 'completed', 
         price_per_hour: price_per_hour, 
         service_charge: service_charge, 
         total_price: parseInt(totalPriceInput), 
@@ -665,7 +754,6 @@
         const end = new Date(endTimeStr);
         const diffMs = end - start;
         
-        // Hitung durasi dalam jam (bisa desimal)
         const duration = diffMs / (1000 * 60 * 60);
         
         if (duration <= 0) {
@@ -674,11 +762,207 @@
         }
 
         const { price_per_hour, service_charge } = getRoomDetails(roomId);
-        
-        // Rumus: (Harga x Durasi) + Service. Dibulatkan.
         const total = Math.ceil((price_per_hour * duration) + service_charge);
-        
         totalInput.value = total;
+    }
+
+    // MANAGER LOGIC (NOTIFICATIONS & EDIT)
+    
+    async function sendNotification(type, message, details) {
+        if (!currentUser || currentUser.role === 'Manager') return;
+
+        const notifRef = collection(db, 'payboss_notifications', appId, 'alerts');
+        try {
+            await addDoc(notifRef, {
+                type: type, 
+                message: message,
+                details: details,
+                actor: currentUser.name,
+                timestamp: new Date().toISOString(),
+                isRead: false
+            });
+        } catch (e) {
+            console.error("Gagal kirim notifikasi", e);
+        }
+    }
+
+    async function clearAllNotifications() {
+        notifications.forEach(async (n) => {
+            if(!n.isRead) {
+                const docRef = doc(db, 'payboss_notifications', appId, 'alerts', n.id);
+                await updateDoc(docRef, { isRead: true });
+            }
+        });
+    }
+
+    function showEditTransaction(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if(!booking) return;
+
+        const editDiv = document.createElement('div');
+        editDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 slide-in';
+        editDiv.innerHTML = `
+          <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-xl font-bold mb-4">Edit Transaksi</h3>
+            <div class="mb-4">
+               <label class="block text-sm font-bold mb-1">Nama Pelanggan</label>
+               <input type="text" id="edit-customer" value="${booking.customer_name}" class="w-full border rounded p-2">
+            </div>
+            <div class="mb-4">
+               <label class="block text-sm font-bold mb-1">Durasi (Jam) - Update Jam Keluar</label>
+               <input type="number" id="edit-duration" value="${booking.duration_hours}" step="0.5" class="w-full border rounded p-2">
+            </div>
+            <div class="mb-4">
+               <label class="block text-sm font-bold mb-1">Total Harga (Rp)</label>
+               <input type="number" id="edit-total" value="${booking.total_price}" class="w-full border rounded p-2">
+            </div>
+            <div class="flex gap-2 justify-end">
+               <button onclick="this.closest('.fixed').remove()" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Batal</button>
+               <button id="save-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Simpan Perubahan</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(editDiv);
+
+        document.getElementById('save-edit-btn').onclick = async () => {
+             const newName = document.getElementById('edit-customer').value;
+             const newTotal = parseInt(document.getElementById('edit-total').value);
+             const newDuration = parseFloat(document.getElementById('edit-duration').value);
+             
+             if(!newName || isNaN(newTotal) || isNaN(newDuration)) {
+                 alert('Data tidak valid');
+                 return;
+             }
+             
+             let updates = {
+                 customer_name: newName,
+                 total_price: newTotal,
+                 duration_hours: newDuration
+             };
+             
+             if(newDuration !== booking.duration_hours) {
+                 const startTime = new Date(booking.start_time);
+                 const newEndTime = new Date(startTime.getTime() + newDuration * 60 * 60 * 1000);
+                 updates.end_time = newEndTime.toISOString();
+             }
+
+             const docRef = doc(db, 'payboss_bookings', appId, 'all_bookings', bookingId);
+             try {
+                 await updateDoc(docRef, updates);
+                 
+                 if (currentUser.role !== 'Manager') {
+                     await sendNotification(
+                         'edit', 
+                         `${currentUser.name} mengedit transaksi ${booking.room_number}`, 
+                         `Mengubah data pelanggan ${booking.customer_name}. Total: ${booking.total_price} -> ${newTotal}. Durasi: ${booking.duration_hours} -> ${newDuration}`
+                     );
+                 }
+
+                 editDiv.remove();
+                 alert('Transaksi berhasil diupdate');
+             } catch(e) {
+                 console.error(e);
+                 alert('Gagal update');
+             }
+        };
+    }
+
+    function showCancelTransaction(bookingId) {
+        const booking = allBookings.find(b => b.id === bookingId);
+        if(!booking) return;
+
+        const cancelDiv = document.createElement('div');
+        cancelDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 slide-in';
+        cancelDiv.innerHTML = `
+          <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 border-2 border-red-500">
+            <h3 class="text-xl font-bold mb-2 text-red-600">Batalkan Transaksi?</h3>
+            <p class="mb-4 text-sm text-gray-600">Tindakan ini akan mengubah status transaksi menjadi 'Cancelled'.</p>
+            
+            <div class="mb-4">
+               <label class="block text-sm font-bold mb-1">Alasan Pembatalan (Wajib)</label>
+               <textarea id="cancel-reason" class="w-full border rounded p-2 h-24" placeholder="Contoh: Salah input kamar, Tamu kabur, dll..."></textarea>
+            </div>
+            
+            <div class="flex gap-2 justify-end">
+               <button onclick="this.closest('.fixed').remove()" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Kembali</button>
+               <button id="confirm-cancel-btn" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">❌ Konfirmasi Batal</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(cancelDiv);
+        
+        document.getElementById('confirm-cancel-btn').onclick = async () => {
+             const reason = document.getElementById('cancel-reason').value;
+             
+             if(!reason || reason.trim().length < 5) {
+                 alert('Mohon isi alasan pembatalan dengan jelas (minimal 5 karakter).');
+                 return;
+             }
+             
+             const docRef = doc(db, 'payboss_bookings', appId, 'all_bookings', bookingId);
+             try {
+                 await updateDoc(docRef, {
+                     status: 'cancelled',
+                     cancel_reason: reason,
+                     cancelled_by: currentUser.name,
+                     cancelled_at: new Date().toISOString()
+                 });
+
+                 if (currentUser.role !== 'Manager') {
+                     await sendNotification(
+                         'cancel', 
+                         `${currentUser.name} membatalkan transaksi ${booking.room_number}`, 
+                         `Alasan: ${reason}`
+                     );
+                 }
+
+                 cancelDiv.remove();
+                 alert('Transaksi telah dibatalkan.');
+             } catch(e) {
+                 console.error(e);
+                 alert('Gagal membatalkan transaksi');
+             }
+        };
+    }
+    
+    function showNotificationList() {
+        const notifDiv = document.createElement('div');
+        notifDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 slide-in';
+        
+        const unreadList = notifications; 
+
+        notifDiv.innerHTML = `
+          <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">🔔 Notifikasi Manager</h3>
+                <button id="close-notif" class="text-2xl">&times;</button>
+            </div>
+            <div class="space-y-3">
+               ${unreadList.length === 0 ? '<p class="text-gray-500 text-center py-4">Tidak ada notifikasi baru.</p>' : ''}
+               ${unreadList.map(n => `
+                  <div class="p-3 rounded border-l-4 ${n.isRead ? 'bg-gray-50 border-gray-300' : 'bg-blue-50 border-blue-500'}">
+                     <div class="flex justify-between">
+                         <span class="font-bold text-sm ${n.type === 'cancel' ? 'text-red-600' : 'text-blue-600'}">${n.type.toUpperCase()}</span>
+                         <span class="text-xs text-gray-500">${formatTime(n.timestamp)}</span>
+                     </div>
+                     <p class="font-semibold text-sm mt-1">${n.message}</p>
+                     <p class="text-xs text-gray-600 mt-1">${n.details}</p>
+                  </div>
+               `).join('')}
+            </div>
+            <div class="mt-4 pt-4 border-t flex justify-end">
+                <button id="clear-notif" class="text-blue-600 text-sm font-bold">Tandai Semua Dibaca</button>
+            </div>
+          </div>
+        `;
+        
+        document.body.appendChild(notifDiv);
+        
+        document.getElementById('close-notif').onclick = () => notifDiv.remove();
+        document.getElementById('clear-notif').onclick = async () => {
+            await clearAllNotifications();
+            notifDiv.remove();
+        };
     }
 
     async function handleCheckout(booking) {
@@ -704,25 +988,20 @@
       
       document.getElementById('confirm-checkout').onclick = async () => {
         if (!userId || !booking.id) {
-           alert("Error: Tidak dapat checkout. User ID or Booking ID tidak ditemukan.");
+           alert("Error: Tidak dapat checkout.");
            return;
         }
 
         const docRef = doc(db, 'payboss_bookings', appId, 'all_bookings', booking.id);
         
         try {
-          await updateDoc(docRef, {
-            status: 'completed'
-          });
-          
+          await updateDoc(docRef, { status: 'completed' });
           document.body.removeChild(confirmDiv);
-          
           const updatedBookingForReceipt = { ...booking, status: 'completed' };
           showReceipt(updatedBookingForReceipt);
-
         } catch (error) {
           console.error("Error updating document: ", error);
-          alert("Gagal melakukan checkout. Coba lagi.");
+          alert("Gagal melakukan checkout.");
           document.body.removeChild(confirmDiv);
         }
       };
@@ -738,16 +1017,12 @@
       startRoomTimer(); 
     }
 
-    // ============================================
-    // FUNGSI BARU: PRINT VIA RAWBT (BLUETOOTH)
-    // ============================================
     function printViaRawBT(booking) {
         const receiptWidth = 32; 
         const pad = (str, len, char = ' ') => String(str).padEnd(len, char);
         const padLeft = (str, len, char = ' ') => String(str).padStart(len, char);
         
         let receiptText = '';
-
         receiptText += "         PAY BOSS CAFE\n";
         receiptText += " Jl. Tanjung Permai No 2 RT 07\n";
         receiptText += "    Pembataan.Murung Pudak.\n";
@@ -757,10 +1032,9 @@
         
         receiptText += `Pelanggan: ${booking.customer_name}\n`;
         receiptText += `Kasir    : ${booking.created_by}\n`;
-        receiptText += `Waktu    : ${formatDate(booking.created_at)}\n`;
+        receiptText += `Waktu    : ${formatDate(booking.created_at)} ${formatTime(booking.created_at)}\n`;
         receiptText += "--------------------------------\n";
 
-        // Item Ruangan
         let itemName = `${booking.room_number} - ${booking.room_type.toUpperCase()} (${booking.duration_hours} Jam)`;
         if (itemName.length > receiptWidth) {
             receiptText += pad(itemName.substring(0, receiptWidth), receiptWidth) + "\n";
@@ -772,17 +1046,13 @@
         const roomPriceTotal = booking.price_per_hour * booking.duration_hours;
         receiptText += padLeft(formatCurrency(roomPriceTotal), receiptWidth) + "\n";
 
-        // Biaya Service (Jika ada)
         if (booking.service_charge > 0) {
              receiptText += pad("Biaya Service", 18) + padLeft(formatCurrency(booking.service_charge), 14) + "\n";
         }
 
         receiptText += "--------------------------------\n";
-
-        // Total
         receiptText += pad("TOTAL", 12) + padLeft(formatCurrency(booking.total_price), 20) + "\n";
         receiptText += "--------------------------------\n";
-
         receiptText += "      Wifi : Pay Boss Cafe\n";
         receiptText += "     Pasword : P4yB0sSC4F3\n";
         receiptText += "--------------------------------\n";
@@ -790,7 +1060,6 @@
         receiptText += "    Instagram: @Payboss.cafe\n";
         receiptText += "\n\n\n"; 
 
-        // Encode dan Buka RawBT
         const encodedReceiptText = encodeURIComponent(receiptText);
         const rawBtUrl = `rawbt:${encodedReceiptText}`;
         window.open(rawBtUrl, '_blank');
@@ -814,6 +1083,10 @@
               <div class="flex justify-between mb-1">
                 <span>Tanggal:</span>
                 <span>${formatDate(booking.created_at)}</span>
+              </div>
+              <div class="flex justify-between mb-1">
+                <span>Waktu:</span>
+                <span>${formatTime(booking.created_at)}</span>
               </div>
               <div class="flex justify-between mb-1">
                 <span>Kasir:</span>
@@ -872,16 +1145,11 @@
       receiptDiv.innerHTML = receiptContent;
       document.body.appendChild(receiptDiv);
       
-      // Event Listener Tombol Cetak
-      document.getElementById('print-receipt').onclick = () => {
-        printViaRawBT(booking);
-      };
-      
-      document.getElementById('close-receipt').onclick = () => {
-        document.body.removeChild(receiptDiv);
-      };
+      document.getElementById('print-receipt').onclick = () => printViaRawBT(booking);
+      document.getElementById('close-receipt').onclick = () => document.body.removeChild(receiptDiv);
     }
 
+    // 7. RENDER FUNCTIONS
     function renderLogin() {
       const config = window.elementSdk?.config || defaultConfig;
       const customFont = config.font_family || defaultConfig.font_family;
@@ -894,8 +1162,6 @@
 
       return `
         <div class="min-h-screen flex w-full" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
-          
-          <!-- SISI KIRI: GAMBAR -->
           <div class="hidden lg:flex lg:w-1/2 flex-col relative">
             <div class="h-1/2 w-full relative overflow-hidden group">
                <img src="https://i.imgur.com/GtlM9wP.png" alt="Billiard Area" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
@@ -910,95 +1176,113 @@
                </div>
             </div>
           </div>
-
-          <!-- SISI KANAN: FORM LOGIN -->
           <div class="w-full lg:w-1/2 flex items-center justify-center p-8 relative">
              <div class="w-full max-w-md p-8 rounded-2xl shadow-xl slide-in" style="background-color: ${config.surface_color};">
                 <div class="text-center mb-8">
                   <h1 class="text-3xl font-bold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 2}px;">${config.app_title}</h1>
                   <p class="text-lg" style="color: ${config.text_color}; font-size: ${baseSize}px;">Login Staff</p>
                 </div>
-                
                 <form onsubmit="handleLogin(event)" class="space-y-4">
                   <div>
                     <label for="username" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Username</label>
                     <input type="text" id="username" placeholder="Contoh: kasir1" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                   </div>
-                  
                   <div>
                     <label for="password" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Password</label>
                     <input type="password" id="password" placeholder="(Kosongkan jika kasir1)" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                   </div>
-                  
                   <div id="login-error" class="hidden text-red-600 text-center font-semibold" style="font-size: ${baseSize * 0.9}px;"></div>
-                  
                   <button type="submit" class="w-full py-3 rounded-lg text-white font-bold text-lg transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
                     🔐 Masuk Aplikasi
                   </button>
                 </form>
              </div>
-             
              <div class="absolute bottom-4 text-sm opacity-50" style="color: ${config.text_color}">
                 &copy; 2025 Pay Boss Entertainment System
              </div>
           </div>
-
         </div>
       `;
     }
 
-    function getDailySalesAnalysis() {
-      const today = new Date();
-      const todayStr = today.toDateString();
-      
-      const todayBookings = allBookings.filter(booking => {
-        const bookingDateStr = booking.created_at || booking.start_time;
-        if (!bookingDateStr) return false;
+    function renderTransactionManager() {
+        const config = window.elementSdk?.config || defaultConfig;
+        const customFont = config.font_family || defaultConfig.font_family;
+        const baseFontStack = 'system-ui, -apple-system, sans-serif';
+        const baseSize = config.font_size || defaultConfig.font_size;
         
-        const bookingDate = new Date(bookingDateStr);
-        return bookingDate.toDateString() === todayStr && booking.status === 'completed';
-      });
-      
-      const totalRevenue = todayBookings.reduce((sum, booking) => sum + booking.total_price, 0);
-      
-      const categoryStats = {
-        billiard: { count: 0, revenue: 0, hours: 0 },
-        karaoke: { count: 0, revenue: 0, hours: 0 },
-        massage: { count: 0, revenue: 0, hours: 0 }
-      };
-      
-      todayBookings.forEach(booking => {
-        const category = booking.room_type;
-        if (categoryStats[category]) {
-          categoryStats[category].count++;
-          categoryStats[category].revenue += booking.total_price;
-          categoryStats[category].hours += booking.duration_hours;
-        }
-      });
-      
-      const activeBookings = allBookings.filter(booking => booking.status === 'active');
-      const pendingRevenue = activeBookings.reduce((sum, booking) => sum + booking.total_price, 0);
-      
-      const cashierStats = {};
-      todayBookings.forEach(booking => {
-        if (!booking.created_by) return;
-        if (!cashierStats[booking.created_by]) {
-          cashierStats[booking.created_by] = { count: 0, revenue: 0 };
-        }
-        cashierStats[booking.created_by].count++;
-        cashierStats[booking.created_by].revenue += booking.total_price;
-      });
-      
-      const topCashier = Object.entries(cashierStats).sort((a, b) => b[1].revenue - a[1].revenue)[0];
-      
-      return {
-        totalRevenue,
-        totalBookings: todayBookings.length,
-        categoryStats,
-        activeBookings: activeBookings.length,
-        pendingRevenue,
-        topCashier: topCashier ? { name: topCashier[0], ...topCashier[1] } : null
-      };
+        return `
+        <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
+          <div class="max-w-6xl mx-auto p-4">
+            <div class="flex justify-between items-center mb-6 p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
+              <div class="flex items-center gap-3">
+                 <button onclick="handleCancelBooking()" class="p-2 rounded hover:bg-gray-100">⬅️</button>
+                 <h1 class="text-2xl font-bold" style="color: ${config.text_color};">Kelola Riwayat Transaksi</h1>
+              </div>
+              <div class="text-sm font-semibold text-gray-500">
+                 Akses Kasir Utama
+              </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+               <div class="overflow-x-auto">
+                   <table class="w-full text-left border-collapse">
+                       <thead class="bg-gray-100">
+                           <tr>
+                               <th class="p-4 border-b font-bold text-sm">Waktu</th>
+                               <th class="p-4 border-b font-bold text-sm">Pelanggan</th>
+                               <th class="p-4 border-b font-bold text-sm">Room</th>
+                               <th class="p-4 border-b font-bold text-sm">Total</th>
+                               <th class="p-4 border-b font-bold text-sm">Status</th>
+                               <th class="p-4 border-b font-bold text-sm text-center">Aksi</th>
+                           </tr>
+                       </thead>
+                       <tbody>
+                           ${allBookings.map(booking => {
+                               const isCancelled = booking.status === 'cancelled';
+                               const isCompleted = booking.status === 'completed';
+                               
+                               let statusBadge = '';
+                               if(booking.status === 'active') statusBadge = '<span class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">Aktif</span>';
+                               else if(isCompleted) statusBadge = '<span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">Selesai</span>';
+                               else if(isCancelled) statusBadge = '<span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">Dibatalkan</span>';
+                               else statusBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs">${booking.status}</span>`;
+
+                               return `
+                               <tr class="hover:bg-gray-50 ${isCancelled ? 'opacity-50' : ''}">
+                                   <td class="p-4 border-b text-sm">
+                                       <div class="font-bold">${formatDate(booking.created_at)}</div>
+                                       <div class="text-xs text-gray-500">${formatTime(booking.created_at)}</div>
+                                   </td>
+                                   <td class="p-4 border-b text-sm font-medium">${booking.customer_name}</td>
+                                   <td class="p-4 border-b text-sm">
+                                       ${booking.room_number} <span class="text-xs text-gray-500">(${booking.duration_hours}j)</span>
+                                   </td>
+                                   <td class="p-4 border-b text-sm font-bold text-gray-700">
+                                       ${formatCurrency(booking.total_price)}
+                                   </td>
+                                   <td class="p-4 border-b text-sm">
+                                       ${statusBadge}
+                                       ${isCancelled && booking.cancel_reason ? `<div class="text-xs text-red-600 mt-1 max-w-[150px] truncate" title="${booking.cancel_reason}">"${booking.cancel_reason}"</div>` : ''}
+                                   </td>
+                                   <td class="p-4 border-b text-sm text-center">
+                                       ${!isCancelled ? `
+                                          <div class="flex justify-center gap-2">
+                                              <button onclick="showEditTransaction('${booking.id}')" class="p-2 bg-yellow-400 text-white rounded hover:bg-yellow-500 text-xs" title="Edit Harga/Nama">✏️</button>
+                                              <button onclick="showCancelTransaction('${booking.id}')" class="p-2 bg-red-500 text-white rounded hover:bg-red-600 text-xs" title="Batalkan Transaksi">🗑️</button>
+                                          </div>
+                                       ` : '<span class="text-xs text-gray-400">-</span>'}
+                                   </td>
+                               </tr>
+                               `;
+                           }).join('')}
+                       </tbody>
+                   </table>
+               </div>
+            </div>
+          </div>
+        </div>
+        `;
     }
 
     function renderDashboard() {
@@ -1009,22 +1293,27 @@
       
       const allRoomsRaw = [...ROOMS.billiard, ...ROOMS.karaoke, ...ROOMS.massage];
       const allRooms = allRoomsRaw.filter(room => isServiceEnabled(room.type));
-      
       const salesAnalysis = getDailySalesAnalysis();
       
-      const salesAnalysisSection = currentUser.role === 'Manager' ? `
+      const unreadCount = notifications.filter(n => !n.isRead).length;
+
+      // === LOGIC TAMPILAN SESUAI ROLE ===
+      const isManager = currentUser.role === 'Manager';
+      const isKasir1 = currentUser.username === 'kasir1';
+      // Kasir2 atau lainnya hanya user biasa
+
+      const salesAnalysisSection = isManager ? `
         <div class="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-sm font-medium" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">💰 Pendapatan Hari Ini</p>
+                <p class="text-sm font-medium" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">💰 Pendapatan</p>
                 <p class="text-2xl font-bold" style="color: ${config.primary_action_color}; font-size: ${baseSize * 1.5}px;">${formatCurrency(salesAnalysis.totalRevenue)}</p>
-                <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">${salesAnalysis.totalBookings} transaksi selesai</p>
+                <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">${salesAnalysis.totalBookings} selesai</p>
               </div>
               <div class="text-3xl">📊</div>
             </div>
           </div>
-          
           <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
             <div class="flex items-center justify-between">
               <div>
@@ -1035,67 +1324,57 @@
               <div class="text-3xl">⏳</div>
             </div>
           </div>
-          
-          <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm font-medium" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">🏆 Terpopuler</p>
-                ${Object.entries(salesAnalysis.categoryStats).sort((a, b) => b[1].count - a[1].count).slice(0, 1).map(([type, stats]) => `
-                  <p class="text-lg font-bold capitalize" style="color: ${config.text_color}; font-size: ${baseSize * 1.1}px;">${type}</p>
-                  <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">${stats.count} booking, ${stats.hours}h</p>
-                `).join('')}
-              </div>
-              <div class="text-3xl">🎯</div>
-            </div>
-          </div>
-          
-          <div class="p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="text-sm font-medium" style="color: ${config.text_color}; font-size: ${baseSize * 0.85}px;">👑 Kasir Terbaik</p>
-                ${salesAnalysis.topCashier ? `
-                  <p class="text-lg font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.1}px;">${salesAnalysis.topCashier.name}</p>
-                  <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">${formatCurrency(salesAnalysis.topCashier.revenue)}</p>
-                ` : `
-                  <p class="text-lg" style="color: ${config.text_color}; font-size: ${baseSize * 1.1}px;">Belum ada</p>
-                  <p class="text-xs" style="color: ${config.text_color}; font-size: ${baseSize * 0.75}px;">transaksi hari ini</p>
-                `}
-              </div>
-              <div class="text-3xl">🥇</div>
-            </div>
+        </div>
+      ` : '';
+      
+      // LOGIC CONTROLS: 
+      // Kasir1 -> Lihat tombol Kelola Riwayat
+      // Manager -> Lihat tombol Status Layanan
+      // Kasir2 -> Tidak melihat apapun di section ini
+      
+      let managerControlsContent = '';
+      if (isKasir1) {
+          managerControlsContent += `
+             <button onclick="showTransactionManager()" class="flex items-center justify-center gap-2 p-4 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 transition-all shadow-md w-full">
+                 📂 Kelola Riwayat & Edit Transaksi
+             </button>
+          `;
+      }
+      if (isManager) {
+          managerControlsContent += `
+             <div class="p-4 rounded-lg border-2 border-gray-200 w-full">
+                <h4 class="font-bold mb-2">Status Layanan</h4>
+                <div class="flex gap-2">
+                    ${['billiard', 'karaoke', 'massage'].map(type => {
+                      const enabled = isServiceEnabled(type);
+                      return `
+                        <button onclick="toggleServiceStatus('${type}')" class="flex-1 py-1 px-2 text-xs rounded text-white font-semibold ${enabled ? 'bg-green-500' : 'bg-red-500'}">
+                          ${type.toUpperCase()}
+                        </button>
+                      `}).join('')}
+                </div>
+             </div>
+          `;
+      }
+
+      const managerControlsSection = managerControlsContent ? `
+        <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
+          <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">⚙️ Kontrol & Edit</h3>
+          <div class="flex flex-col md:flex-row gap-4">
+             ${managerControlsContent}
           </div>
         </div>
       ` : '';
       
-      const managerControlsSection = currentUser.role === 'Manager' ? `
+      const managerReportsSection = isManager ? `
         <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
-          <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">⚙️ Kontrol Layanan</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            ${['billiard', 'karaoke', 'massage'].map(type => {
-              const enabled = isServiceEnabled(type);
-              return `
-              <div class="p-4 rounded-lg border-2 ${enabled ? 'border-green-400' : 'border-red-400'}" style="background-color: ${config.background_color};">
-                <h4 class="font-bold capitalize mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 1.1}px;">
-                  ${type === 'billiard' ? '🎱' : type === 'karaoke' ? '🎤' : '💆'} ${type}
-                </h4>
-                <button onclick="toggleServiceStatus('${type}')" class="w-full py-2 rounded-lg text-white font-semibold" style="background-color: ${enabled ? config.secondary_action_color : '#10B981'};">
-                  ${enabled ? 'NONAKTIFKAN' : 'AKTIFKAN'}
-                </button>
-              </div>
-              `}).join('')}
-          </div>
-        </div>
-      ` : '';
-      
-      const managerReportsSection = currentUser.role === 'Manager' ? `
-        <div class="mb-6 p-6 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
-          <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📄 Laporan Pendapatan</h3>
+          <h3 class="text-xl font-bold mb-4" style="color: ${config.text_color}; font-size: ${baseSize * 1.25}px;">📄 Laporan</h3>
           <div class="flex flex-col sm:flex-row gap-4">
             <button onclick="generateExcelReport('weekly')" class="flex-1 py-3 px-4 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
-              💾 Download Laporan Minggu Ini
+              💾 Mingguan
             </button>
             <button onclick="generateExcelReport('monthly')" class="flex-1 py-3 px-4 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
-              💾 Download Laporan Bulan Ini
+              💾 Bulanan
             </button>
           </div>
         </div>
@@ -1134,13 +1413,25 @@
                   ⏳ Sisa: Menghitung...
                 </p>
               </div>
+              ${!isManager ? `
               <button onclick='handleCheckout(${JSON.stringify(status).replace(/"/g, "&quot;")})' class="w-full py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize}px;">
                 💰 Checkout - ${formatCurrency(status.total_price)}
               </button>
+              ` : `
+              <div class="w-full py-2 rounded-lg text-center font-semibold bg-gray-200 text-gray-600">
+                👁️ Sedang Digunakan
+              </div>
+              `}
             ` : `
+              ${!isManager ? `
               <button onclick='showBookingForm(${JSON.stringify(room)})' class="w-full py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                 ➕ Booking Ruangan
               </button>
+              ` : `
+              <div class="w-full py-2 rounded-lg text-center font-semibold bg-green-100 text-green-800">
+                ✅ Ruangan Tersedia
+              </div>
+              `}
             `}
           </div>
         `;
@@ -1150,14 +1441,29 @@
         <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
           <div class="max-w-7xl mx-auto p-4">
             <div class="flex justify-between items-center mb-6 p-4 rounded-xl shadow-lg" style="background-color: ${config.surface_color};">
-              <div>
-                <h1 class="text-2xl font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">${config.app_title}</h1>
-                <p style="color: ${config.text_color}; font-size: ${baseSize * 0.9}px;">👤 ${currentUser.name} (${currentUser.role})</p>
+              <div class="flex items-center gap-4">
+                 <div>
+                    <h1 class="text-2xl font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">${config.app_title}</h1>
+                    <p style="color: ${config.text_color}; font-size: ${baseSize * 0.9}px;">👤 ${currentUser.name} (${currentUser.role})</p>
+                 </div>
+                 
+                 ${isManager ? `
+                    <button onclick="showNotificationList()" class="relative p-2 ml-4 text-3xl transition-transform hover:scale-110">
+                        <span class="${unreadCount > 0 ? 'bell-active' : 'text-gray-400'}">🔔</span>
+                        ${unreadCount > 0 ? `
+                        <span class="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-100 bg-red-600 rounded-full transform translate-x-1/4 -translate-y-1/4">
+                            ${unreadCount}
+                        </span>` : ''}
+                    </button>
+                 ` : ''}
               </div>
+
               <div class="flex gap-2">
+                 ${!isManager ? `
                  <button onclick="showManualInput()" class="px-4 py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: #F59E0B; font-size: ${baseSize}px;">
                     📝 Input Manual
                  </button>
+                 ` : ''}
                  <button onclick="handleLogout()" class="px-6 py-2 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
                     🚪 Logout
                  </button>
@@ -1175,187 +1481,52 @@
         </div>
       `;
     }
+    
+    // 8. INITIALIZATION
+    async function initApp() {
+      await initializeFirebaseAndAuth();
 
-    function renderBookingForm() {
-      const config = window.elementSdk?.config || defaultConfig;
-      const customFont = config.font_family || defaultConfig.font_family;
-      const baseFontStack = 'system-ui, -apple-system, sans-serif';
-      const baseSize = config.font_size || defaultConfig.font_size;
+      window.elementSdk.init({
+        defaultConfig,
+        onConfigChange,
+        mapToCapabilities: (config) => ({
+          recolorables: [
+            { get: () => config.background_color, set: (v) => { config.background_color = v; window.elementSdk.setConfig({background_color: v}); }},
+            { get: () => config.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({surface_color: v}); }},
+            { get: () => config.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({text_color: v}); }},
+            { get: () => config.primary_action_color, set: (v) => { config.primary_action_color = v; window.elementSdk.setConfig({primary_action_color: v}); }},
+            { get: () => config.secondary_action_color, set: (v) => { config.secondary_action_color = v; window.elementSdk.setConfig({secondary_action_color: v}); }}
+          ],
+          fontEditable: { get: () => config.font_family, set: (v) => { config.font_family = v; window.elementSdk.setConfig({font_family: v}); }},
+          fontSizeable: { get: () => config.font_size, set: (v) => { config.font_size = v; window.elementSdk.setConfig({font_size: v}); }}
+        }),
+        mapToEditPanelValues: (config) => new Map([
+          ["app_title", config.app_title],
+          ["billiard_enabled", config.billiard_enabled !== "false"],
+          ["karaoke_enabled", config.karaoke_enabled !== "false"],
+          ["massage_enabled", config.massage_enabled !== "false"],
+          ["billiard_price", config.billiard_price],
+          ["billiard_service", config.billiard_service],
+          ["massage_price", config.massage_price],
+          ["massage_service", config.massage_service],
+          ["karaoke_k1_price", config.karaoke_k1_price],
+          ["karaoke_k1_service", config.karaoke_k1_service],
+          ["karaoke_k2_price", config.karaoke_k2_price],
+          ["karaoke_k2_service", config.karaoke_k2_service],
+          ["karaoke_k3_price", config.karaoke_k3_price],
+          ["karaoke_k3_service", config.karaoke_k3_service]
+        ])
+      });
       
-      const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room.id);
-      
-      return `
-        <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
-          <div class="max-w-2xl mx-auto p-4">
-            <div class="p-6 rounded-xl shadow-2xl slide-in" style="background-color: ${config.surface_color};">
-              <h2 class="text-2xl font-bold mb-6" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">📝 Booking ${selectedBooking.room.name}</h2>
-              
-              <form onsubmit="handleBookingSubmit(event)" class="space-y-4">
-                <div>
-                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Nama Pelanggan</label>
-                  <input type="text" id="customer-name" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                </div>
-                
-                <div>
-                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Tipe Booking</label>
-                  <select id="booking-type" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;" onchange="document.getElementById('booking-time-group').style.display = this.value === 'booking' ? 'block' : 'none'">
-                    <option value="open">🟢 Open Room (Mulai Sekarang)</option>
-                    <option value="booking">📅 Booking (Jadwal Nanti)</option>
-                  </select>
-                </div>
-                
-                <div id="booking-time-group" style="display: none;">
-                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Waktu Mulai</label>
-                  <input type="datetime-local" id="booking-time" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                </div>
-                
-                <div>
-                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Durasi</label>
-                  <select id="duration" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                    <option value="1">1 Jam - ${formatCurrency((price_per_hour * 1) + service_charge)}</option>
-                    <option value="2">2 Jam - ${formatCurrency((price_per_hour * 2) + service_charge)}</option>
-                    <option value="3">3 Jam - ${formatCurrency((price_per_hour * 3) + service_charge)}</option>
-                  </select>
-                </div>
-                
-                <div class="flex gap-3 pt-4">
-                  <button type="submit" id="submit-booking" class="flex-1 py-3 rounded-lg text-white font-bold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
-                    ✅ Simpan Booking
-                  </button>
-                  <button type="button" onclick="handleCancelBooking()" class="flex-1 py-3 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                    ❌ Batal
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderManualInput() {
-      const config = window.elementSdk?.config || defaultConfig;
-      const customFont = config.font_family || defaultConfig.font_family;
-      const baseFontStack = 'system-ui, -apple-system, sans-serif';
-      const baseSize = config.font_size || defaultConfig.font_size;
-      
-      const allRooms = [...ROOMS.karaoke, ...ROOMS.billiard, ...ROOMS.massage];
-      
-      // Setup waktu default (Hari ini) untuk input datetime-local agar kasir mudah
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      const nowStr = now.toISOString().slice(0,16);
-
-      // Waktu 1 jam ke depan
-      const nextHour = new Date(now.getTime() + 60*60*1000);
-      nextHour.setMinutes(nextHour.getMinutes() - nextHour.getTimezoneOffset());
-      const nextHourStr = nextHour.toISOString().slice(0,16);
-
-      return `
-        <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
-          <div class="max-w-2xl mx-auto p-4">
-            <div class="p-8 rounded-xl shadow-2xl slide-in border-4 border-yellow-400" style="background-color: ${config.surface_color};">
-              
-              <div class="flex items-center gap-4 mb-6 pb-4 border-b">
-                 <div class="bg-yellow-100 p-3 rounded-full text-3xl">📝</div>
-                 <div>
-                    <h2 class="text-2xl font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">Input Manual / Transaksi Langsung</h2>
-                    <p class="text-sm opacity-70">Gunakan ini untuk memasukkan transaksi yang tidak melalui timer sistem.</p>
-                 </div>
-              </div>
-              
-              <form onsubmit="handleManualSubmit(event)" class="space-y-6">
-                
-                <!-- Pilih Ruangan -->
-                <div>
-                  <label class="block mb-2 font-bold text-lg" style="color: ${config.text_color};">Pilih Ruangan</label>
-                  <select id="manual-room" onchange="calculateManualTotal()" class="w-full px-4 py-4 text-lg rounded-lg border-2 bg-gray-50 focus:outline-none focus:ring-2 focus:border-yellow-500" required>
-                    <option value="" disabled selected>-- Pilih Ruangan --</option>
-                    <optgroup label="Karaoke">
-                        ${ROOMS.karaoke.map(r => `<option value="${r.id}">${r.name} (${formatCurrency(getRoomDetails(r.id).price_per_hour)}/jam)</option>`).join('')}
-                    </optgroup>
-                    <optgroup label="Billiard">
-                        ${ROOMS.billiard.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
-                    </optgroup>
-                    <optgroup label="Massage">
-                        ${ROOMS.massage.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
-                    </optgroup>
-                  </select>
-                </div>
-
-                <!-- Nama Pelanggan -->
-                <div>
-                  <label class="block mb-2 font-bold" style="color: ${config.text_color};">Nama Pelanggan</label>
-                  <input type="text" id="manual-customer" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="Nama Tamu...">
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Jam Masuk -->
-                    <div>
-                      <label class="block mb-2 font-bold" style="color: ${config.text_color};">Jam Masuk</label>
-                      <input type="datetime-local" id="manual-start" onchange="calculateManualTotal()" value="${nowStr}" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500">
-                    </div>
-                    
-                    <!-- Jam Keluar -->
-                    <div>
-                      <label class="block mb-2 font-bold" style="color: ${config.text_color};">Jam Keluar</label>
-                      <input type="datetime-local" id="manual-end" onchange="calculateManualTotal()" value="${nextHourStr}" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500">
-                    </div>
-                </div>
-
-                <!-- Total Harga -->
-                <div class="p-4 rounded-lg bg-yellow-50 border-2 border-yellow-200">
-                  <label class="block mb-2 font-bold text-xl" style="color: ${config.text_color};">Total Harga (Rp)</label>
-                  <div class="flex items-center">
-                      <span class="text-2xl font-bold mr-2 text-gray-500">Rp</span>
-                      <input type="number" id="manual-total" required class="w-full px-4 py-3 text-3xl font-bold text-green-700 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:border-green-500" placeholder="0">
-                  </div>
-                  <p class="text-xs mt-2 text-gray-500">*Harga otomatis dihitung berdasarkan durasi, tapi <b>bisa diedit manual</b> jika ada diskon.</p>
-                </div>
-                
-                <div class="flex gap-4 pt-4">
-                  <button type="submit" id="manual-submit-btn" class="flex-1 py-4 rounded-lg text-white font-bold text-xl shadow-lg transition-transform hover:scale-105" style="background-color: #10B981;">
-                    💾 Simpan ke Laporan
-                  </button>
-                  <button type="button" onclick="handleCancelBooking()" class="flex-1 py-4 rounded-lg text-white font-semibold shadow-lg transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color};">
-                    ❌ Batal
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderApp() {
-      const app = document.getElementById('app');
-      if (!userId) {
-        app.innerHTML = renderLogin(); 
-        return;
-      }
-      if (currentView === 'login') {
-        app.innerHTML = renderLogin();
-      } else if (currentView === 'dashboard') {
-        app.innerHTML = renderDashboard();
-        updateRoomTimers(); 
-      } else if (currentView === 'booking-form') {
-        app.innerHTML = renderBookingForm();
-      } else if (currentView === 'manual-input') {
-        app.innerHTML = renderManualInput();
-        // Trigger kalkulasi awal saat halaman dibuka
-        setTimeout(calculateManualTotal, 500);
-      }
-    }
-
-    async function onConfigChange(config) {
       renderApp();
     }
     
+    // EXPOSE GLOBAL FUNCTIONS
     window.handleLogin = handleLogin;
     window.handleLogout = handleLogout;
     window.showBookingForm = showBookingForm;
     window.showManualInput = showManualInput; 
+    window.showTransactionManager = showTransactionManager; 
     window.handleBookingSubmit = handleBookingSubmit;
     window.handleManualSubmit = handleManualSubmit; 
     window.handleCheckout = handleCheckout;
@@ -1364,6 +1535,9 @@
     window.generateExcelReport = generateExcelReport; 
     window.calculateManualTotal = calculateManualTotal; 
     window.getRoomDetails = getRoomDetails; 
+    window.showEditTransaction = showEditTransaction;
+    window.showCancelTransaction = showCancelTransaction;
+    window.showNotificationList = showNotificationList;
 
     initApp();
   </script>
