@@ -674,32 +674,38 @@
 
     async function handleManualSubmit(e) {
       e.preventDefault();
-      
-      if (!userId) {
-        alert("Error: User tidak terautentikasi.");
-        return;
-      }
+      if (!userId) return;
 
       const roomId = document.getElementById('manual-room').value;
       const customerName = document.getElementById('manual-customer').value;
-      const startTimeStr = document.getElementById('manual-start').value;
-      const endTimeStr = document.getElementById('manual-end').value;
+      const dateVal = document.getElementById('manual-date').value;
+      
+      // Get Start Time
+      const startH = document.getElementById('start-h').value;
+      const startM = document.getElementById('start-m').value;
+      
+      // Get End Time
+      const endH = document.getElementById('end-h').value;
+      const endM = document.getElementById('end-m').value;
+      
       const totalPriceInput = document.getElementById('manual-total').value;
       
-      if(!roomId || !startTimeStr || !endTimeStr || !totalPriceInput) {
+      if(!roomId || !dateVal || !totalPriceInput) {
           alert("Mohon lengkapi semua data.");
           return;
       }
 
-      const startTime = new Date(startTimeStr);
-      const endTime = new Date(endTimeStr);
+      // Construct Date Objects
+      const startTime = new Date(`${dateVal}T${startH}:${startM}:00`);
+      let endTime = new Date(`${dateVal}T${endH}:${endM}:00`);
+      
+      // Handle Next Day Logic (if End Time < Start Time)
+      if (endTime < startTime) {
+          endTime.setDate(endTime.getDate() + 1);
+      }
+
       const durationMs = endTime - startTime;
       const durationHours = parseFloat((durationMs / (1000 * 60 * 60)).toFixed(1));
-
-      if (durationHours <= 0) {
-          alert("Waktu keluar harus setelah waktu masuk.");
-          return;
-      }
 
       let roomType = 'unknown';
       [...ROOMS.billiard, ...ROOMS.karaoke, ...ROOMS.massage].forEach(r => {
@@ -744,16 +750,30 @@
 
     function calculateManualTotal() {
         const roomId = document.getElementById('manual-room').value;
-        const startTimeStr = document.getElementById('manual-start').value;
-        const endTimeStr = document.getElementById('manual-end').value;
+        const dateVal = document.getElementById('manual-date').value;
+        
+        // Get Start Time
+        const startH = document.getElementById('start-h').value;
+        const startM = document.getElementById('start-m').value;
+        
+        // Get End Time
+        const endH = document.getElementById('end-h').value;
+        const endM = document.getElementById('end-m').value;
+        
         const totalInput = document.getElementById('manual-total');
 
-        if (!roomId || !startTimeStr || !endTimeStr) return;
+        if (!roomId || !dateVal) return;
 
-        const start = new Date(startTimeStr);
-        const end = new Date(endTimeStr);
-        const diffMs = end - start;
+        // Construct Date Objects
+        const startTime = new Date(`${dateVal}T${startH}:${startM}:00`);
+        let endTime = new Date(`${dateVal}T${endH}:${endM}:00`);
         
+        // Handle Next Day Logic
+        if (endTime < startTime) {
+            endTime.setDate(endTime.getDate() + 1);
+        }
+
+        const diffMs = endTime - startTime;
         const duration = diffMs / (1000 * 60 * 60);
         
         if (duration <= 0) {
@@ -764,6 +784,26 @@
         const { price_per_hour, service_charge } = getRoomDetails(roomId);
         const total = Math.ceil((price_per_hour * duration) + service_charge);
         totalInput.value = total;
+    }
+    
+    // Helper to generate Hour options (00-23)
+    function generateHourOptions(selected) {
+        let options = '';
+        for(let i=0; i<24; i++) {
+            const val = i.toString().padStart(2, '0');
+            options += `<option value="${val}" ${val === selected ? 'selected' : ''}>${val}</option>`;
+        }
+        return options;
+    }
+
+    // Helper to generate Minute options (00-55)
+    function generateMinuteOptions(selected) {
+        let options = '';
+        for(let i=0; i<60; i+=5) {
+            const val = i.toString().padStart(2, '0');
+            options += `<option value="${val}" ${val === selected ? 'selected' : ''}>${val}</option>`;
+        }
+        return options;
     }
 
     // MANAGER LOGIC (NOTIFICATIONS & EDIT)
@@ -1161,45 +1201,31 @@
       }
 
       return `
-        <div class="min-h-screen flex w-full" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
-          <div class="hidden lg:flex lg:w-1/2 flex-col relative">
-            <div class="h-1/2 w-full relative overflow-hidden group">
-               <img src="https://i.imgur.com/GtlM9wP.png" alt="Billiard Area" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
-               <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">BILLIARD</h2>
-               </div>
+        <div class="min-h-screen flex items-center justify-center w-full" style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack};">
+          
+          <div class="w-full max-w-md p-8 rounded-2xl shadow-xl slide-in" style="background-color: ${config.surface_color};">
+            <div class="text-center mb-8">
+              <h1 class="text-3xl font-bold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 2}px;">${config.app_title}</h1>
+              <p class="text-lg" style="color: ${config.text_color}; font-size: ${baseSize}px;">Login Staff</p>
             </div>
-            <div class="h-1/2 w-full relative overflow-hidden group">
-               <img src="https://i.imgur.com/tUMpgTV.png" alt="Karaoke Room" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110">
-               <div class="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center">
-                  <h2 class="text-4xl font-bold text-white tracking-widest shadow-lg" style="text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">KARAOKE VIP</h2>
-               </div>
-            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+              <div>
+                <label for="username" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Username</label>
+                <input type="text" id="username" placeholder="Contoh: kasir1" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+              </div>
+              <div>
+                <label for="password" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Password</label>
+                <input type="password" id="password" placeholder="(Kosongkan jika kasir1)" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+              </div>
+              <div id="login-error" class="hidden text-red-600 text-center font-semibold" style="font-size: ${baseSize * 0.9}px;"></div>
+              <button type="submit" class="w-full py-3 rounded-lg text-white font-bold text-lg transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
+                🔐 Masuk Aplikasi
+              </button>
+            </form>
           </div>
-          <div class="w-full lg:w-1/2 flex items-center justify-center p-8 relative">
-             <div class="w-full max-w-md p-8 rounded-2xl shadow-xl slide-in" style="background-color: ${config.surface_color};">
-                <div class="text-center mb-8">
-                  <h1 class="text-3xl font-bold mb-2" style="color: ${config.text_color}; font-size: ${baseSize * 2}px;">${config.app_title}</h1>
-                  <p class="text-lg" style="color: ${config.text_color}; font-size: ${baseSize}px;">Login Staff</p>
-                </div>
-                <form onsubmit="handleLogin(event)" class="space-y-4">
-                  <div>
-                    <label for="username" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Username</label>
-                    <input type="text" id="username" placeholder="Contoh: kasir1" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                  </div>
-                  <div>
-                    <label for="password" class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Password</label>
-                    <input type="password" id="password" placeholder="(Kosongkan jika kasir1)" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
-                  </div>
-                  <div id="login-error" class="hidden text-red-600 text-center font-semibold" style="font-size: ${baseSize * 0.9}px;"></div>
-                  <button type="submit" class="w-full py-3 rounded-lg text-white font-bold text-lg transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
-                    🔐 Masuk Aplikasi
-                  </button>
-                </form>
-             </div>
-             <div class="absolute bottom-4 text-sm opacity-50" style="color: ${config.text_color}">
-                &copy; 2025 Pay Boss Entertainment System
-             </div>
+          
+          <div class="absolute bottom-4 text-sm opacity-50" style="color: ${config.text_color}">
+            &copy; 2025 Pay Boss Entertainment System
           </div>
         </div>
       `;
@@ -1476,6 +1502,178 @@
             
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               ${roomCards}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBookingForm() {
+      const config = window.elementSdk?.config || defaultConfig;
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseFontStack = 'system-ui, -apple-system, sans-serif';
+      const baseSize = config.font_size || defaultConfig.font_size;
+      
+      const { price_per_hour, service_charge } = getRoomDetails(selectedBooking.room.id);
+      
+      return `
+        <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
+          <div class="max-w-2xl mx-auto p-4">
+            <div class="p-6 rounded-xl shadow-2xl slide-in" style="background-color: ${config.surface_color};">
+              <h2 class="text-2xl font-bold mb-6" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">📝 Booking ${selectedBooking.room.name}</h2>
+              
+              <form onsubmit="handleBookingSubmit(event)" class="space-y-4">
+                <div>
+                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Nama Pelanggan</label>
+                  <input type="text" id="customer-name" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                </div>
+                
+                <div>
+                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Tipe Booking</label>
+                  <select id="booking-type" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;" onchange="document.getElementById('booking-time-group').style.display = this.value === 'booking' ? 'block' : 'none'">
+                    <option value="open">🟢 Open Room (Mulai Sekarang)</option>
+                    <option value="booking">📅 Booking (Jadwal Nanti)</option>
+                  </select>
+                </div>
+                
+                <div id="booking-time-group" style="display: none;">
+                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Waktu Mulai</label>
+                  <input type="datetime-local" id="booking-time" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                </div>
+                
+                <div>
+                  <label class="block mb-2 font-semibold" style="color: ${config.text_color}; font-size: ${baseSize}px;">Durasi</label>
+                  <select id="duration" class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2" style="border-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                    <option value="1">1 Jam - ${formatCurrency((price_per_hour * 1) + service_charge)}</option>
+                    <option value="2">2 Jam - ${formatCurrency((price_per_hour * 2) + service_charge)}</option>
+                    <option value="3">3 Jam - ${formatCurrency((price_per_hour * 3) + service_charge)}</option>
+                  </select>
+                </div>
+                
+                <div class="flex gap-3 pt-4">
+                  <button type="submit" id="submit-booking" class="flex-1 py-3 rounded-lg text-white font-bold transition-transform hover:scale-105" style="background-color: ${config.primary_action_color}; font-size: ${baseSize * 1.1}px;">
+                    ✅ Simpan Booking
+                  </button>
+                  <button type="button" onclick="handleCancelBooking()" class="flex-1 py-3 rounded-lg text-white font-semibold transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color}; font-size: ${baseSize}px;">
+                    ❌ Batal
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderManualInput() {
+      const config = window.elementSdk?.config || defaultConfig;
+      const customFont = config.font_family || defaultConfig.font_family;
+      const baseFontStack = 'system-ui, -apple-system, sans-serif';
+      const baseSize = config.font_size || defaultConfig.font_size;
+      
+      const allRooms = [...ROOMS.karaoke, ...ROOMS.billiard, ...ROOMS.massage];
+      
+      // Default time values
+      const now = new Date();
+      const currentH = now.getHours().toString().padStart(2, '0');
+      const currentM = (Math.floor(now.getMinutes() / 5) * 5).toString().padStart(2, '0'); // Round to 5 mins
+      
+      const nextH = (now.getHours() + 1).toString().padStart(2, '0');
+      const dateStr = now.toISOString().slice(0,10);
+
+      return `
+        <div style="background-color: ${config.background_color}; font-family: '${customFont}', ${baseFontStack}; min-height: 100%;">
+          <div class="max-w-2xl mx-auto p-4">
+            <div class="p-8 rounded-xl shadow-2xl slide-in border-4 border-yellow-400" style="background-color: ${config.surface_color};">
+              
+              <div class="flex items-center gap-4 mb-6 pb-4 border-b">
+                 <div class="bg-yellow-100 p-3 rounded-full text-3xl">📝</div>
+                 <div>
+                    <h2 class="text-2xl font-bold" style="color: ${config.text_color}; font-size: ${baseSize * 1.5}px;">Input Manual / Transaksi Langsung</h2>
+                    <p class="text-sm opacity-70">Masukkan data transaksi yang tidak melalui timer.</p>
+                 </div>
+              </div>
+              
+              <form onsubmit="handleManualSubmit(event)" class="space-y-6">
+                
+                <!-- Pilih Ruangan -->
+                <div>
+                  <label class="block mb-2 font-bold text-lg" style="color: ${config.text_color};">Pilih Ruangan</label>
+                  <select id="manual-room" onchange="calculateManualTotal()" class="w-full px-4 py-4 text-lg rounded-lg border-2 bg-gray-50 focus:outline-none focus:ring-2 focus:border-yellow-500" required>
+                    <option value="" disabled selected>-- Pilih Ruangan --</option>
+                    <optgroup label="Karaoke">
+                        ${ROOMS.karaoke.map(r => `<option value="${r.id}">${r.name} (${formatCurrency(getRoomDetails(r.id).price_per_hour)}/jam)</option>`).join('')}
+                    </optgroup>
+                    <optgroup label="Billiard">
+                        ${ROOMS.billiard.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+                    </optgroup>
+                    <optgroup label="Massage">
+                        ${ROOMS.massage.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+                    </optgroup>
+                  </select>
+                </div>
+
+                <!-- Nama Pelanggan -->
+                <div>
+                  <label class="block mb-2 font-bold" style="color: ${config.text_color};">Nama Pelanggan</label>
+                  <input type="text" id="manual-customer" required class="w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:border-yellow-500" placeholder="Nama Tamu...">
+                </div>
+
+                <!-- TANGGAL & WAKTU (Custom Dropdown) -->
+                <div>
+                    <label class="block mb-2 font-bold" style="color: ${config.text_color};">Tanggal Transaksi</label>
+                    <input type="date" id="manual-date" value="${dateStr}" onchange="calculateManualTotal()" class="w-full px-4 py-3 rounded-lg border-2 mb-4 focus:border-yellow-500">
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Jam Masuk -->
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <label class="block mb-2 font-bold text-gray-700">Jam Masuk (Start)</label>
+                      <div class="flex items-center gap-2">
+                          <select id="start-h" onchange="calculateManualTotal()" class="w-1/2 p-2 border rounded text-lg font-mono">
+                             ${generateHourOptions(currentH)}
+                          </select>
+                          <span class="font-bold">:</span>
+                          <select id="start-m" onchange="calculateManualTotal()" class="w-1/2 p-2 border rounded text-lg font-mono">
+                             ${generateMinuteOptions(currentM)}
+                          </select>
+                      </div>
+                    </div>
+                    
+                    <!-- Jam Keluar -->
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <label class="block mb-2 font-bold text-gray-700">Jam Keluar (End)</label>
+                      <div class="flex items-center gap-2">
+                          <select id="end-h" onchange="calculateManualTotal()" class="w-1/2 p-2 border rounded text-lg font-mono">
+                             ${generateHourOptions(nextH)}
+                          </select>
+                          <span class="font-bold">:</span>
+                          <select id="end-m" onchange="calculateManualTotal()" class="w-1/2 p-2 border rounded text-lg font-mono">
+                             ${generateMinuteOptions(currentM)}
+                          </select>
+                      </div>
+                    </div>
+                </div>
+
+                <!-- Total Harga -->
+                <div class="p-4 rounded-lg bg-yellow-50 border-2 border-yellow-200 mt-4">
+                  <label class="block mb-2 font-bold text-xl" style="color: ${config.text_color};">Total Harga (Rp)</label>
+                  <div class="flex items-center">
+                      <span class="text-2xl font-bold mr-2 text-gray-500">Rp</span>
+                      <input type="number" id="manual-total" required class="w-full px-4 py-3 text-3xl font-bold text-green-700 rounded-lg border-2 border-gray-300 focus:outline-none focus:ring-2 focus:border-green-500" placeholder="0">
+                  </div>
+                  <p class="text-xs mt-2 text-gray-500">*Harga otomatis dihitung berdasarkan jam masuk & keluar.</p>
+                </div>
+                
+                <div class="flex gap-4 pt-4">
+                  <button type="submit" id="manual-submit-btn" class="flex-1 py-4 rounded-lg text-white font-bold text-xl shadow-lg transition-transform hover:scale-105" style="background-color: #10B981;">
+                    💾 Simpan ke Laporan
+                  </button>
+                  <button type="button" onclick="handleCancelBooking()" class="flex-1 py-4 rounded-lg text-white font-semibold shadow-lg transition-transform hover:scale-105" style="background-color: ${config.secondary_action_color};">
+                    ❌ Batal
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
